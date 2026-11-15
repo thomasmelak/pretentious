@@ -21,9 +21,6 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-.deno-deploy
 
-# Local database
-*.kv
-*.kv-shm
-*.kv-wal
+# Local secrets
+.dev.vars

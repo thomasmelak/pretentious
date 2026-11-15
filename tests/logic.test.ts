@@ -1,22 +1,25 @@
-import { assertEquals, assertThrows } from 'jsr:@std/assert@1';
+import { expect, test } from 'vitest';
 import { RECIPES } from '../src/lib/shared/catalog.ts';
 import { INGREDIENTS } from '../src/lib/shared/catalog.ts';
 import { buildOrder, emptyCore, publicMenu, suggest, totals } from '../src/lib/shared/logic.ts';
 import { applyOp } from '../src/lib/shared/reducer.ts';
 import type { CoreState, Op } from '../src/lib/shared/types.ts';
 
+const assertEquals = (actual: unknown, expected: unknown) => expect(actual).toEqual(expected);
+const assertThrows = (fn: () => unknown) => expect(fn).toThrow();
+
 const run = (ops: Op[], start: CoreState = emptyCore()) => ops.reduce(applyOp, start);
 
-Deno.test('every built-in recipe uses known ingredients and unique ids', () => {
+test('every built-in recipe uses known ingredients and unique ids', () => {
 	const known = new Set(INGREDIENTS.map((i) => i.id));
 	for (const r of RECIPES) {
-		for (const i of r.ingredients) assertEquals(known.has(i.id), true, `${r.id}: ${i.id}`);
+		for (const i of r.ingredients) expect(known.has(i.id), `${r.id}: ${i.id}`).toBe(true);
 	}
 	assertEquals(new Set(RECIPES.map((r) => r.id)).size, RECIPES.length);
 	assertEquals(known.size, INGREDIENTS.length);
 });
 
-Deno.test('suggestions follow the inventory', () => {
+test('suggestions follow the inventory', () => {
 	const s = suggest(RECIPES, ['gin', 'campari', 'sweet-vermouth', 'dry-vermouth']);
 	const ready = s.ready.map((x) => x.recipe.id);
 	// Martini only needs gin and dry vermouth: olives and bitters are optional.
@@ -25,7 +28,7 @@ Deno.test('suggestions follow the inventory', () => {
 	assertEquals(americano?.missing, ['soda']);
 });
 
-Deno.test('guest menu hides drinks when an ingredient runs out', () => {
+test('guest menu hides drinks when an ingredient runs out', () => {
 	let core = run([
 		{ type: 'stock.set', ids: ['gin', 'campari', 'sweet-vermouth', 'lime', 'simple'], inStock: true },
 		{ type: 'event.create', id: 'e1', name: 'Gallery opening', date: '2026-12-01' },
@@ -49,7 +52,7 @@ Deno.test('guest menu hides drinks when an ingredient runs out', () => {
 	assertEquals(publicMenu(core).items.map((i) => i.id), ['negroni', 'gimlet', 'daiquiri']);
 });
 
-Deno.test('each event keeps its own menu and prices', () => {
+test('each event keeps its own menu and prices', () => {
 	const core = run([
 		{ type: 'stock.set', ids: ['gin', 'campari', 'sweet-vermouth'], inStock: true },
 		{ type: 'event.create', id: 'a', name: 'A', date: '' },
@@ -64,7 +67,7 @@ Deno.test('each event keeps its own menu and prices', () => {
 	assertEquals(publicMenu(core).event?.name, 'B');
 });
 
-Deno.test('orders are priced from the menu and split by payment', () => {
+test('orders are priced from the menu and split by payment', () => {
 	const core = run([
 		{ type: 'stock.set', ids: ['gin', 'campari', 'sweet-vermouth', 'lime', 'simple'], inStock: true },
 		{ type: 'event.create', id: 'e1', name: 'E', date: '' },
@@ -107,7 +110,7 @@ Deno.test('orders are priced from the menu and split by payment', () => {
 	assertThrows(() => buildOrder(core, { eventId: 'e1', payment: 'cash', lines: [] }, 'x', ''));
 });
 
-Deno.test('house ingredients and recipes join the library', () => {
+test('house ingredients and recipes join the library', () => {
 	const core = run([
 		{ type: 'ingredient.add', id: 'tej', name: 'Tej', category: 'wine' },
 		{

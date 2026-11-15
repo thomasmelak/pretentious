@@ -1,0 +1,26 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "pretentious-peacock",
+	"main": "worker/index.ts",
+	"compatibility_date": "2026-01-01",
+	// The built site. The Worker answers /api/* and serves these files for everything else,
+	// so one deployment can host the whole app.
+	"assets": {
+		"directory": "./build",
+		"binding": "ASSETS",
+		"run_worker_first": ["/api/*"]
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "pretentious-peacock",
+			// Replace with the id printed by `npx wrangler d1 create pretentious-peacock`.
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	]
+	// Secrets (set with `npx wrangler secret put BAR_PIN`, or in .dev.vars locally):
+	//   BAR_PIN         required. The passphrase bartenders sign in with.
+	// Optional variable:
+	//   ALLOWED_ORIGIN  the site allowed to call the API when it is hosted elsewhere.
+}

@@ -127,7 +127,7 @@ class Bar {
 
 	async setVoided(order: Order, voided: boolean) {
 		try {
-			const res = await api.voidOrder(this.#pin, order.eventId, order.id, voided);
+			const res = await api.voidOrder(this.#pin, order.id, voided);
 			this.orders = this.orders.map((o) => (o.id === order.id ? res.order : o));
 		} catch (err) {
 			await this.#recover(err);

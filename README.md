@@ -13,48 +13,61 @@ per event.
 | `src/routes/+page.svelte` | The guest menu for the live event |
 | `src/routes/bar/` | Staff screens: inventory, recipes, events, orders |
 | `src/lib/shared/` | Recipe library and all the rules (availability, pricing, totals). Used by both the app and the server |
-| `server/main.ts` | The Deno API, storing data in Deno KV |
+| `worker/index.ts` | The API, a Cloudflare Worker storing data in a D1 database |
+| `migrations/` | Database schema |
 | `tests/` | Tests for the shared rules |
 
 The app is SvelteKit, built as a static client-rendered site. The API is a single
-Deno file. Guests can read the menu without signing in; every other request needs
-the bar passphrase.
+Cloudflare Worker, which fits the free plan. Guests can read the menu without
+signing in; every other request needs the bar passphrase.
 
 ## Running it
 
-You need [Deno](https://deno.com) 2.
+You need Node 22 or newer.
 
 ```sh
-deno install          # once
-deno task api         # the API on http://localhost:8000 (passphrase: peacock)
-deno task dev         # the app on http://localhost:5173, in a second terminal
+npm install
+cp .dev.vars.example .dev.vars   # sets the local passphrase to "peacock"
+npm run api                      # the API on http://localhost:8787, with a local database
+npm run dev                      # the app on http://localhost:5173, in a second terminal
 ```
 
-Open the app, follow "Behind the bar" and sign in. Set your own passphrase with
-`BAR_PIN=something deno task api`.
+Open the app, follow "Behind the bar" and sign in.
 
-Other tasks:
+Other scripts:
 
 ```sh
-deno task test        # rules tests
-deno task check       # type check
-deno task build       # static site into ./build
-deno task start       # API that also serves ./build, for single-server hosting
+npm test             # rules tests
+npm run check        # type check
+npm run build        # static site into ./build
 ```
 
 ## Configuration
 
-Server (environment variables):
+API:
 
-- `BAR_PIN` is the staff passphrase. Required: without it nobody can sign in.
+- `BAR_PIN` is the staff passphrase, stored as a secret. Required: without it nobody
+  can sign in. Locally it comes from `.dev.vars`.
 - `ALLOWED_ORIGIN` is the site allowed to call the API. Defaults to any.
-- `PORT` defaults to 8000.
-- `KV_PATH` is an optional path for the local database file.
 
 App (build time):
 
-- `VITE_API_URL` is the address of the API when it is hosted somewhere other than
-  the site itself. Leave it unset when the server also serves the site.
+- `VITE_API_URL` is the address of the API when the site is hosted somewhere else.
+  Leave it unset when the Worker also serves the site.
+
+## Deploying
+
+Not wired up yet. The outline, with a free Cloudflare account:
+
+```sh
+npx wrangler login
+npx wrangler d1 create pretentious-peacock   # copy the database id into wrangler.jsonc
+npx wrangler secret put BAR_PIN
+npm run deploy                               # builds, migrates the database, deploys
+```
+
+That hosts the API and the site together. To host the site on a static host instead,
+build it with `VITE_API_URL` pointing at the Worker.
 
 ## How availability works
 

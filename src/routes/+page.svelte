@@ -21,7 +21,7 @@
 		load();
 		const timer = setInterval(() => {
 			if (document.visibilityState === 'visible') load();
-		}, 10_000);
+		}, 15_000);
 		const onVisible = () => document.visibilityState === 'visible' && load();
 		document.addEventListener('visibilitychange', onVisible);
 		return () => {

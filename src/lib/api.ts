@@ -1,6 +1,6 @@
 import type { CoreState, Op, Order, OrderInput, PublicMenu } from './shared/types.ts';
 
-/** Where the Deno API lives. Empty means "same origin" (dev proxy or single-server hosting). */
+/** Where the API lives. Empty means "same origin" (dev proxy or single-server hosting). */
 const BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 
 export class ApiError extends Error {
@@ -38,6 +38,6 @@ export const api = {
 	op: (pin: string, op: Op) => call<{ core: CoreState }>('/ops', { pin, body: { op } }),
 	order: (pin: string, input: OrderInput) =>
 		call<{ order: Order }>('/orders', { pin, body: input }),
-	voidOrder: (pin: string, eventId: string, id: string, voided: boolean) =>
-		call<{ order: Order }>('/orders/void', { pin, body: { eventId, id, voided } })
+	voidOrder: (pin: string, id: string, voided: boolean) =>
+		call<{ order: Order }>('/orders/void', { pin, body: { id, voided } })
 };
