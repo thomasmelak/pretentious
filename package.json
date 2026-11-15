@@ -1,0 +1,37 @@
+{
+	"name": "pretentious-peacock",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"imports": {
+		"#lib": "./src/lib/index.js",
+		"#lib/*": "./src/lib/*"
+	},
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc -p worker",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"api": "wrangler d1 migrations apply DB --local && wrangler dev --port 8787",
+		"test": "vitest run",
+		"deploy": "npm run build && wrangler d1 migrations apply DB --remote && wrangler deploy"
+	},
+	"dependencies": {
+		"qrcode-generator": "^2.0.4"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^5.20261115.1",
+		"@sveltejs/adapter-auto": "^8.0.0",
+		"@sveltejs/adapter-static": "^4.0.1",
+		"@sveltejs/kit": "^3.0.0",
+		"@sveltejs/vite-plugin-svelte": "^7.2.0",
+		"svelte": "^5.57.2",
+		"svelte-check": "^4.6.0",
+		"typescript": "^6.0.3",
+		"vite": "^8.3.0",
+		"vitest": "^5.1.0",
+		"wrangler": "^4.162.0"
+	}
+}
