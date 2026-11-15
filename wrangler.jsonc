@@ -8,15 +8,24 @@
 	"assets": {
 		"directory": "./build",
 		"binding": "ASSETS",
-		"run_worker_first": ["/api/*"]
+		"run_worker_first": [
+			"/api/*"
+		]
 	},
 	"d1_databases": [
+		// {
+		// 	"binding": "DB",
+		// 	"database_name": "pretentious-peacock",
+		// 	// Replace with the id printed by `npx wrangler d1 create pretentious-peacock`.
+		// 	"database_id": "00000000-0000-0000-0000-000000000000",
+		// 	"migrations_dir": "migrations"
+		// },
 		{
 			"binding": "DB",
 			"database_name": "pretentious-peacock",
-			// Replace with the id printed by `npx wrangler d1 create pretentious-peacock`.
-			"database_id": "00000000-0000-0000-0000-000000000000",
-			"migrations_dir": "migrations"
+			"database_id": "15bfb27a-41e3-4ee8-8735-eb4190cd757c",
+			"remote": true,
+			 "migrations_dir": "migrations"
 		}
 	]
 	// Secrets (set with `npx wrangler secret put BAR_PIN`, or in .dev.vars locally):
