@@ -205,6 +205,6 @@
 		height: auto;
 	}
 	.settings a {
-		overflow-wrap: anywhere;
+		overflow-wrap: break-word;
 	}
 </style>

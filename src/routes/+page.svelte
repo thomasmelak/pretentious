@@ -477,6 +477,7 @@
 	}
 	h3 {
 		font-size: 30px;
+		overflow-wrap: break-word;
 	}
 	.toggle {
 		all: unset;
