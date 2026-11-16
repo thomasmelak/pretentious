@@ -6,6 +6,7 @@
 	import { fly, slide } from 'svelte/transition';
 	import { bar } from '#lib/bar.svelte.ts';
 	import AmountInput from '#lib/components/AmountInput.svelte';
+	import Dropdown from '#lib/components/Dropdown.svelte';
 	import GlassIcon from '#lib/components/GlassIcon.svelte';
 	import IngredientIcon from '#lib/components/IngredientIcon.svelte';
 	import ProfileIcon from '#lib/components/ProfileIcon.svelte';
@@ -129,6 +130,14 @@
 
 	const profile = $derived(PROFILES.find((p) => p.id === d.profile));
 </script>
+
+{#snippet shelfIcon(id: Category)}
+	<IngredientIcon ingredient={{ id: 'x', name: '', category: id }} size={22} />
+{/snippet}
+
+{#snippet familyIcon(id: Family | '')}
+	<IngredientIcon ingredient={{ id: 'x', name: '', category: 'spirit', family: id || undefined }} size={22} />
+{/snippet}
 
 <section class="wizard card" aria-labelledby="wizard-title" transition:slide={{ duration: calm(350) }}>
 	<header class="spread head">
@@ -306,24 +315,22 @@
 									Name
 									<input bind:value={newName} required maxlength="60" placeholder="Olmeca Chocolate" />
 								</label>
-								<label>
-									Shelf
-									<select bind:value={newShelf}>
-										{#each CATEGORIES as c (c.id)}
-											<option value={c.id}>{c.label}</option>
-										{/each}
-									</select>
-								</label>
+								<Dropdown
+									label="Shelf"
+									options={CATEGORIES.map((c) => ({ value: c.id, label: c.label }))}
+									bind:value={newShelf}
+									icon={shelfIcon}
+								/>
 								{#if newShelf === 'spirit'}
-									<label>
-										Spirit family
-										<select bind:value={newFamily}>
-											<option value="">None</option>
-											{#each FAMILIES as f (f.id)}
-												<option value={f.id}>{f.label}</option>
-											{/each}
-										</select>
-									</label>
+									<Dropdown
+										label="Spirit family"
+										options={[
+											{ value: '' as const, label: 'No family', hint: 'Not a base spirit' },
+											...FAMILIES.map((f) => ({ value: f.id, label: f.label }))
+										]}
+										bind:value={newFamily}
+										icon={familyIcon}
+									/>
 								{/if}
 								<button class="btn small primary">Add and use it</button>
 							</form>
