@@ -304,3 +304,59 @@ details > summary {
 	clip-path: inset(50%);
 	white-space: nowrap;
 }
+
+/* Screen changes cross-fade; the bar's header stays put while they do. */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation-duration: 260ms;
+}
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-group(*),
+	::view-transition-old(*),
+	::view-transition-new(*) {
+		animation: none !important;
+	}
+}
+
+/* Small shared motions. */
+@keyframes pop {
+	40% {
+		transform: scale(1.18);
+	}
+}
+@keyframes shake {
+	20%,
+	60% {
+		transform: translateX(-8px);
+	}
+	40%,
+	80% {
+		transform: translateX(8px);
+	}
+}
+@keyframes pulse {
+	50% {
+		opacity: 0.35;
+	}
+}
+.badge.pick::before {
+	animation: pulse 1.8s ease-in-out infinite;
+}
+.card {
+	transition:
+		border-color 250ms,
+		transform 250ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.btn {
+	transition:
+		background 200ms,
+		transform 120ms;
+}
+.btn:active:not(:disabled) {
+	transform: scale(0.96);
+}
+@media (prefers-reduced-motion: reduce) {
+	.badge.pick::before {
+		animation: none;
+	}
+}

@@ -1,4 +1,4 @@
-import type { Category, Ingredient, Recipe } from './types.ts';
+import type { Category, Family, Ingredient, Profile, Recipe } from './types.ts';
 
 export const CATEGORIES: { id: Category; label: string }[] = [
 	{ id: 'spirit', label: 'Spirits' },
@@ -11,8 +11,57 @@ export const CATEGORIES: { id: Category; label: string }[] = [
 	{ id: 'fresh', label: 'Fresh & pantry' }
 ];
 
+export const FAMILIES: { id: Family; label: string }[] = [
+	{ id: 'gin', label: 'Gin' },
+	{ id: 'whiskey', label: 'Whiskey' },
+	{ id: 'rum', label: 'Rum' },
+	{ id: 'agave', label: 'Tequila & mezcal' },
+	{ id: 'vodka', label: 'Vodka' },
+	{ id: 'brandy', label: 'Brandy' }
+];
+
+/** Label for drinks with no base spirit. */
+export const NO_FAMILY = 'Aperitifs & liqueurs';
+
+export const PROFILES: { id: Profile; label: string; short: string; blurb: string }[] = [
+	{ id: 'stirred', label: 'Strong & stirred', short: 'Spirit-forward', blurb: 'Silky, cold, unhurried' },
+	{ id: 'sour', label: 'Sharp & sour', short: 'Sour', blurb: 'Citrus, bright, awake' },
+	{ id: 'bitter', label: 'Bitter', short: 'Bitter', blurb: 'Grown-up and a little stern' },
+	{ id: 'long', label: 'Long & fizzy', short: 'Long', blurb: 'Tall, sparkling, sociable' },
+	{ id: 'rich', label: 'Rich', short: 'Rich', blurb: 'Coffee, cream, dessert' }
+];
+
+export const GLASSES = [
+	'Coupe',
+	'Martini',
+	'Rocks',
+	'Highball',
+	'Flute',
+	'Wine glass',
+	'Copper mug',
+	'Hurricane'
+];
+
+const SPIRIT_FAMILY: Record<string, Family> = {
+	gin: 'gin',
+	vodka: 'vodka',
+	'white-rum': 'rum',
+	'dark-rum': 'rum',
+	tequila: 'agave',
+	mezcal: 'agave',
+	bourbon: 'whiskey',
+	rye: 'whiskey',
+	scotch: 'whiskey',
+	cognac: 'brandy'
+};
+
 const ing = (category: Category, list: [string, string][]): Ingredient[] =>
-	list.map(([id, name]) => ({ id, name, category }));
+	list.map(([id, name]) => ({
+		id,
+		name,
+		category,
+		...(SPIRIT_FAMILY[id] ? { family: SPIRIT_FAMILY[id] } : {})
+	}));
 
 export const INGREDIENTS: Ingredient[] = [
 	...ing('spirit', [
@@ -256,3 +305,48 @@ export const RECIPES: Recipe[] = [
 		'Shake the first three with ice, strain into a flute and top with sparkling wine.',
 		'Gin and lemon, promoted to sparkling.', 'Lemon twist')
 ];
+
+/** Colour in the glass and flavour profile for each classic. */
+const LOOKS: Record<string, [color: string, profile: Profile]> = {
+	martini: ['#E9E3C4', 'stirred'],
+	negroni: ['#B8332A', 'bitter'],
+	'old-fashioned': ['#B76A2A', 'stirred'],
+	manhattan: ['#8E3A22', 'rich'],
+	boulevardier: ['#9E3423', 'bitter'],
+	'mezcal-negroni': ['#A8372A', 'bitter'],
+	'rob-roy': ['#8E3A22', 'stirred'],
+	sazerac: ['#A0522D', 'stirred'],
+	americano: ['#B8432E', 'bitter'],
+	daiquiri: ['#DCE3B0', 'sour'],
+	margarita: ['#D9DC9A', 'sour'],
+	gimlet: ['#D2DE9E', 'sour'],
+	southside: ['#CFE0A8', 'sour'],
+	eastside: ['#D7E8B5', 'sour'],
+	'whiskey-sour': ['#E0B458', 'sour'],
+	'gold-rush': ['#E3B24A', 'sour'],
+	'bees-knees': ['#EDD38A', 'sour'],
+	'amaretto-sour': ['#E8B04C', 'sour'],
+	sidecar: ['#E0A84E', 'sour'],
+	'last-word': ['#C9D77A', 'sour'],
+	cosmopolitan: ['#D8597A', 'sour'],
+	'jungle-bird': ['#B5412B', 'bitter'],
+	'mai-tai': ['#D98A3A', 'sour'],
+	'pina-colada': ['#F3EBD3', 'rich'],
+	'espresso-martini': ['#4A2E1C', 'rich'],
+	'white-russian': ['#CDB89A', 'rich'],
+	mojito: ['#CFE0A8', 'long'],
+	'tom-collins': ['#EAE6B4', 'long'],
+	'gin-tonic': ['#EEF2E6', 'long'],
+	paloma: ['#EFA58E', 'long'],
+	'moscow-mule': ['#E6D9A6', 'long'],
+	'dark-and-stormy': ['#8A5A2B', 'long'],
+	'cuba-libre': ['#5A3420', 'long'],
+	'tequila-sunrise': ['#F08A3C', 'long'],
+	'aperol-spritz': ['#F26B2E', 'long'],
+	'hugo-spritz': ['#E9EDC4', 'long'],
+	'french-75': ['#F1E6B0', 'long']
+};
+for (const recipe of RECIPES) {
+	const look = LOOKS[recipe.id];
+	if (look) [recipe.color, recipe.profile] = look;
+}

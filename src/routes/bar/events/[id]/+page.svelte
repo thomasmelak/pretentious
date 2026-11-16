@@ -1,8 +1,14 @@
 <script lang="ts">
+	import { flip } from 'svelte/animate';
+	import { fade, slide } from 'svelte/transition';
 	import { page } from '$app/state';
 	import { bar } from '#lib/bar.svelte.ts';
+	import Count from '#lib/components/Count.svelte';
+	import GlassIcon from '#lib/components/GlassIcon.svelte';
 	import { money } from '#lib/format.ts';
+	import { calm } from '#lib/motion.ts';
 	import { menuRows, missing } from '#lib/shared/logic.ts';
+	import { toasts } from '#lib/toast.svelte.ts';
 
 	const event = $derived(bar.core.events.find((e) => e.id === page.params.id));
 	const rows = $derived(event ? menuRows(bar.core, event) : []);
@@ -31,6 +37,14 @@
 			name: String(data.get('name')),
 			date: String(data.get('date'))
 		});
+		toasts.push('Details saved.', 'ok');
+	}
+
+	function addAll() {
+		if (!event) return;
+		const items = makeable.map((c) => ({ recipeId: c.recipe.id, price: c.recipe.price }));
+		bar.dispatch({ type: 'menu.add', eventId: event.id, items });
+		toasts.push(`${items.length} drinks added. The menu looks rather well.`, 'ok');
 	}
 </script>
 
@@ -40,14 +54,21 @@
 			<p class="eyebrow"><a href="#/bar/events">Events</a> / Menu</p>
 			<h1>{event.name}</h1>
 			<p class="muted">
-				{rows.length} on the menu · {rows.filter((r) => r.available).length} available now.
+				<b class="figure"><Count value={rows.length} /></b> on the menu ·
+				<b class="figure"><Count value={rows.filter((r) => r.available).length} /></b> available now.
 				Drinks missing an ingredient stay here but are hidden from guests until it is back.
 			</p>
 		</div>
 		{#if live}
 			<span class="badge pick">Live</span>
 		{:else}
-			<button class="btn" onclick={() => bar.dispatch({ type: 'event.activate', id: event.id })}>
+			<button
+				class="btn"
+				onclick={() => {
+					bar.dispatch({ type: 'event.activate', id: event.id });
+					toasts.push(`${event.name} is live. Guests now see its menu.`, 'ok');
+				}}
+			>
 				Go live
 			</button>
 		{/if}
@@ -64,7 +85,13 @@
 		{#if rows.length}
 			<ul class="list">
 				{#each rows as row (row.recipe.id)}
-					<li class:off={!row.available}>
+					<li
+						class:off={!row.available}
+						animate:flip={{ duration: calm(300) }}
+						in:slide={{ duration: calm(300) }}
+						out:fade={{ duration: calm(150) }}
+					>
+						<GlassIcon glass={row.recipe.glass} color={row.recipe.color} />
 						<div class="what">
 							<h3>{row.recipe.name}</h3>
 							{#if row.available}
@@ -110,22 +137,20 @@
 		<div class="section-head spread">
 			<h2>Add drinks</h2>
 			{#if makeable.length}
-				<button
-					class="btn small"
-					onclick={() =>
-						bar.dispatch({
-							type: 'menu.add',
-							eventId: event.id,
-							items: makeable.map((c) => ({ recipeId: c.recipe.id, price: c.recipe.price }))
-						})}
-				>
+				<button class="btn small" onclick={addAll}>
 					Add all {makeable.length} I can make
 				</button>
 			{/if}
 		</div>
 		<ul class="list">
 			{#each candidates as c (c.recipe.id)}
-				<li class:off={c.missing.length > 0}>
+				<li
+					class:off={c.missing.length > 0}
+					animate:flip={{ duration: calm(300) }}
+					in:slide={{ duration: calm(300) }}
+					out:fade={{ duration: calm(150) }}
+				>
+					<GlassIcon glass={c.recipe.glass} color={c.recipe.color} />
 					<div class="what">
 						<h3>{c.recipe.name}</h3>
 						{#if c.missing.length === 0}
@@ -171,11 +196,23 @@
 	}
 	.list li {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto auto;
+		grid-template-columns: auto minmax(0, 1fr) auto auto;
 		align-items: center;
 		gap: 12px 16px;
-		padding: 12px 0;
+		padding: 12px 8px;
+		margin-inline: -8px;
 		border-bottom: 1px solid var(--line);
+		transition: background 200ms;
+	}
+	.list li:hover {
+		background: rgb(226 185 136 / 0.05);
+	}
+	.off :global(.glass) {
+		opacity: 0.45;
+	}
+	.figure {
+		color: var(--gilt);
+		font-weight: 600;
 	}
 	.what {
 		display: grid;
@@ -196,10 +233,13 @@
 	}
 	@media (max-width: 520px) {
 		.list li {
-			grid-template-columns: minmax(0, 1fr) auto;
+			grid-template-columns: auto minmax(0, 1fr) auto;
 		}
 		.what {
-			grid-column: 1 / -1;
+			grid-column: 2 / -1;
+		}
+		.list li > :nth-child(3) {
+			grid-column: 2;
 		}
 	}
 </style>
