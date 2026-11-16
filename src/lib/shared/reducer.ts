@@ -1,5 +1,5 @@
 import { CATEGORIES, FAMILIES, INGREDIENTS, PROFILES, RECIPES } from './catalog.ts';
-import { allIngredients, allRecipes } from './logic.ts';
+import { allIngredients, allRecipes, ICE, iceUse } from './logic.ts';
 import { usage } from './measure.ts';
 import type { Category, CoreState, Family, Ingredient, MenuItem, Op, Recipe } from './types.ts';
 
@@ -126,6 +126,11 @@ export function applyOp(state: CoreState, op: Op): CoreState {
 				if (!use || use.unit !== level.unit) continue;
 				// Allowed below zero, so an undo after running dry still adds up.
 				level.left = Math.round((level.left - use.n * qty) * 100) / 100;
+			}
+			// Ice the method calls for, when the recipe does not list it, comes off a count kept in pieces.
+			const ice = s.levels[ICE];
+			if (ice?.unit === 'each' && !recipe.ingredients.some((i) => i.id === ICE)) {
+				ice.left = Math.round((ice.left - iceUse(recipe) * qty) * 100) / 100;
 			}
 			break;
 		}

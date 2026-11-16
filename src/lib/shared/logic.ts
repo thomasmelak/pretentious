@@ -140,7 +140,10 @@ export function supplies(core: CoreState, event: BarEvent | null): Supply[] {
 		const drinks: string[] = [];
 		for (const row of rows) {
 			const line = row.recipe.ingredients.find((i) => i.id === id && !i.optional);
-			const use = line && usage(line.amount, ingredient.category);
+			const use =
+				line ? usage(line.amount, ingredient.category)
+				: id === ICE && iceUse(row.recipe) ? { n: iceUse(row.recipe), unit: 'each' as const }
+				: null;
 			if (!use || use.unit !== level.unit) continue;
 			drinks.push(row.recipe.name);
 			most = Math.max(most, use.n);
@@ -357,6 +360,31 @@ export function listNames(names: string[]): string {
 	return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
+/** The ingredient id for ice. Recipes rarely list it, so its use is read from the method. */
+export const ICE = 'ice';
+
+/**
+ * Cubes of ice one drink goes through, read from its method when the recipe does not list
+ * ice itself: about 6 to shake or stir with, 6 to serve over, 8 crushed, and a large cube
+ * counted as 2. A guide for stock and budgets, not a measure.
+ */
+export function iceUse(recipe: Recipe): number {
+	const listed = recipe.ingredients.find((i) => i.id === ICE);
+	if (listed) {
+		const lead = listed.amount.match(/^\s*(\d+(?:\.\d+)?)/);
+		return lead ? Number(lead[1]) : 0;
+	}
+	const m = recipe.method.toLowerCase();
+	if (!/\bice\b/.test(m) && !/large cube/.test(m)) return 0;
+	let cubes = 0;
+	// To chill: plain ice that is strained off. Crushed ice that stays in is counted as served.
+	if (/\b(shake|stir)/.test(m) && !/(shake|stir)[^.]*with crushed ice/.test(m)) cubes += 6;
+	if (/crushed ice/.test(m)) cubes += 8;
+	else if (/large cube/.test(m)) cubes += 2;
+	else if (/over (fresh |plenty of )?ice|fill [^.]*with ice|build[^.]*over ice/.test(m)) cubes += 6;
+	return cubes;
+}
+
 /** What one drink of a recipe costs the bar to pour. */
 export interface DrinkCost {
 	/** Cost of the ingredients that have a price. */
@@ -376,6 +404,13 @@ export function drinkCost(core: CoreState, recipe: Recipe): DrinkCost {
 		const use = usage(line.amount, ingredient?.category);
 		if (price && use && use.unit === price.unit) cost += (price.price / price.size) * use.n;
 		else unpriced.push(ingredient?.name ?? line.id);
+	}
+	// Ice from the method, when the recipe does not list it.
+	const ice = recipe.ingredients.some((i) => i.id === ICE) ? 0 : iceUse(recipe);
+	if (ice) {
+		const price = core.costs?.[ICE];
+		if (price?.unit === 'each') cost += (price.price / price.size) * ice;
+		else unpriced.push('Ice');
 	}
 	return { cost: Math.round(cost * 100) / 100, unpriced };
 }
@@ -437,6 +472,12 @@ export function menuBudget(core: CoreState, event: BarEvent, drinks: number): Bu
 			const was = need.get(key) ?? { unit: use.unit, n: 0 };
 			was.n += use.n * each;
 			need.set(key, was);
+		}
+		const ice = row.recipe.ingredients.some((i) => i.id === ICE) ? 0 : iceUse(row.recipe);
+		if (ice) {
+			const was = need.get(`${ICE}|each`) ?? { unit: 'each' as const, n: 0 };
+			was.n += ice * each;
+			need.set(`${ICE}|each`, was);
 		}
 	}
 	const shopping: Purchase[] = [];

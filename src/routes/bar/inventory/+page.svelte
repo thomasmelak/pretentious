@@ -180,7 +180,7 @@
 		openId = item.id;
 		editing = { ...item };
 		const level = bar.core.levels?.[item.id];
-		unit = level?.unit === 'each' ? 'each' : 'ml';
+		unit = level?.unit ?? (item.category === 'fresh' ? 'each' : 'ml');
 		full = level ? String(level.full) : '';
 		left = level ? String(Math.max(0, level.left)) : '';
 		const cost = bar.core.costs?.[item.id];
@@ -558,8 +558,8 @@
 				<form class="part" onsubmit={saveCost}>
 					<p class="eyebrow">Price it</p>
 					<p class="muted small">
-						What you pay, and for how much: a 700 ml bottle, a litre of juice, a bag of 24 limes or one
-						egg. Each drink's cost and the menu budget on the event page are worked out from it.
+						What you pay, and for how much: a 700 ml bottle, a litre of juice, a bag of 100 ice cubes
+						or one egg. Each drink's cost and the menu budget on the event page are worked out from it.
 					</p>
 					<div class="fields">
 						<label>
