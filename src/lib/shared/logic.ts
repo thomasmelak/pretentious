@@ -1,5 +1,5 @@
 import { INGREDIENTS, PROFILES, RECIPES } from './catalog.ts';
-import { usage } from './measure.ts';
+import { countable, usage } from './measure.ts';
 import type {
 	BarEvent,
 	CoreState,
@@ -191,6 +191,7 @@ export function publicMenu(core: CoreState): PublicMenu {
 						ingredients: recipe.ingredients.map((i) => ({
 							name: ingredients.get(i.id)?.name ?? i.id,
 							amount: i.amount,
+							...(countable(i.amount, ingredients.get(i.id)?.category) ? { each: true } : {}),
 							...(i.optional ? { optional: true } : {})
 						})),
 						// At an open bar the prices stay behind the bar.

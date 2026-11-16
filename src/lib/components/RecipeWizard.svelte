@@ -13,7 +13,7 @@
 	import { calm } from '#lib/motion.ts';
 	import { CATEGORIES, FAMILIES, GLASSES, PROFILES } from '#lib/shared/catalog.ts';
 	import { slug } from '#lib/shared/logic.ts';
-	import { measures } from '#lib/shared/measure.ts';
+	import { countable, measures } from '#lib/shared/measure.ts';
 	import type { Category, Family } from '#lib/shared/types.ts';
 	import {
 		close,
@@ -447,7 +447,7 @@
 			{#if d.rows.length}
 				<ul class="measures">
 					{#each d.rows as row (row.id)}
-						{@const [first, second] = measures(row.amount || '')}
+						{@const [first, second] = measures(row.amount || '', countable(row.amount || '', bar.shelves.get(row.id)))}
 						<li>
 							<span>{byId.get(row.id)?.name ?? row.id}{row.optional ? ' (optional)' : ''}</span>
 							<span class="m">{first || '…'}{#if second}<small>{second}</small>{/if}</span>

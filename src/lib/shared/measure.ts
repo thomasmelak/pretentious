@@ -77,9 +77,17 @@ export function formatMl(oz: number): string {
 	return Number.isInteger(ml) ? String(ml) : ml.toFixed(1);
 }
 
+/**
+ * A bare number of something from the fresh shelf counts pieces: "1" olive is one olive,
+ * not an ounce of olives.
+ */
+export function countable(amount: string, category?: string): boolean {
+	return category === 'fresh' && /^[\d\s.,/¼½¾⅓⅔⅛⅜⅝⅞]+$/.test(amount.trim());
+}
+
 /** Both units, the one it was written in first: ["1½ oz", "45 ml"]. Non-volumes stay as written. */
-export function measures(amount: string): [string, string?] {
-	const v = parseVolume(amount);
+export function measures(amount: string, each = false): [string, string?] {
+	const v = each ? null : parseVolume(amount);
 	if (!v) return [amount.trim()];
 	const oz = `${formatOz(v.oz)} oz`;
 	const ml = `${formatMl(v.oz)} ml`;
@@ -95,8 +103,8 @@ export function convertQuantity(text: string, from: Unit, to: Unit): string {
 }
 
 /** An amount for several drinks at once: "1½ oz" × 3 is ["4½ oz", "135 ml"]. Non-volumes stay as written. */
-export function scaled(amount: string, times: number): [string, string?] | null {
-	const v = parseVolume(amount);
+export function scaled(amount: string, times: number, each = false): [string, string?] | null {
+	const v = each ? null : parseVolume(amount);
 	if (!v || times <= 1) return null;
 	const oz = `${formatOz(v.oz * times)} oz`;
 	const ml = `${formatMl(v.oz * times)} ml`;

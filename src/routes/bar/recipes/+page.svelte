@@ -10,7 +10,7 @@
 	import { calm } from '#lib/motion.ts';
 	import { PROFILES } from '#lib/shared/catalog.ts';
 	import { profileOf, type Suggestion } from '#lib/shared/logic.ts';
-	import { measures } from '#lib/shared/measure.ts';
+	import { countable, measures } from '#lib/shared/measure.ts';
 	import type { Recipe } from '#lib/shared/types.ts';
 	import { hasWork, startEdit, startNew, wizard } from '#lib/stores/wizard.ts';
 	import { toasts } from '#lib/toast.svelte.ts';
@@ -100,7 +100,7 @@
 		{#if s.recipe.note}<p class="note">{s.recipe.note}</p>{/if}
 		<ul class="ings">
 			{#each s.recipe.ingredients as i (i.id)}
-				{@const [first, second] = measures(i.amount)}
+				{@const [first, second] = measures(i.amount, countable(i.amount, bar.shelves.get(i.id)))}
 				<li class:missing={!i.optional && !stock.has(i.id)} class:opt={i.optional}>
 					<span class="amt">{first}{#if second}<small>{second}</small>{/if}</span>
 					<span>{bar.names.get(i.id) ?? i.id}{i.optional ? ' (optional)' : ''}</span>

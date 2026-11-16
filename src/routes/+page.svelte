@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { flip } from 'svelte/animate';
-	import { fade, fly, scale, slide } from 'svelte/transition';
+	import { fade, fly, slide } from 'svelte/transition';
 	import { api } from '#lib/api.ts';
 	import GlassIcon from '#lib/components/GlassIcon.svelte';
 	import Peacock from '#lib/components/Peacock.svelte';
@@ -15,7 +15,6 @@
 
 	type Item = PublicMenu['items'][number];
 
-	const ROUND_KEY = 'pp-round';
 	const OPINIONS = [
 		'Yes, I know. Stunning.',
 		'The fan is for admiring, not for touching.',
@@ -44,9 +43,6 @@
 	let spotlight = $state<string | null>(null);
 	let choosing = $state(false);
 
-	let round = $state<Record<string, number>>({});
-	let roundDialog = $state<HTMLDialogElement>();
-
 	const items = $derived(menu?.items ?? []);
 	const currency = $derived(menu?.currency ?? 'USD');
 	const openBar = $derived(Boolean(menu?.event?.openBar));
@@ -64,14 +60,6 @@
 			(g) => g.items.length
 		)
 	);
-	const roundLines = $derived(
-		items.filter((i) => round[i.id] > 0).map((item) => ({ item, qty: round[item.id] }))
-	);
-	const roundCount = $derived(roundLines.reduce((n, l) => n + l.qty, 0));
-	const roundTotal = $derived(
-		roundLines.reduce((sum, l) => sum + Math.round(l.item.price * 100) * l.qty, 0) / 100
-	);
-
 	async function load() {
 		let next: PublicMenu;
 		try {
@@ -83,14 +71,8 @@
 		}
 		const previous = menu;
 		menu = next;
-		if (!previous) {
-			restoreRound(next);
-		} else if (previous.event?.name === next.event?.name) {
+		if (previous && previous.event?.name === next.event?.name) {
 			announce(menuChanges(previous, next));
-		}
-		// A drink that has run out cannot stay in anyone's round.
-		for (const id of Object.keys(round)) {
-			if (!next.items.some((i) => i.id === id)) delete round[id];
 		}
 	}
 
@@ -120,38 +102,6 @@
 			document.removeEventListener('visibilitychange', onVisible);
 		};
 	});
-
-	// A guest's round is only kept on their own phone, for the event they started it at.
-	function restoreRound(first: PublicMenu) {
-		try {
-			const saved = JSON.parse(localStorage.getItem(ROUND_KEY) ?? 'null');
-			if (saved?.event === first.event?.name && saved.round) round = saved.round;
-		} catch {
-			// Nothing saved, or storage is unavailable.
-		}
-	}
-	$effect(() => {
-		if (!menu) return;
-		const saved = JSON.stringify({ event: menu.event?.name, round: $state.snapshot(round) });
-		try {
-			localStorage.setItem(ROUND_KEY, saved);
-		} catch {
-			// Private windows may refuse. The round still works until the page closes.
-		}
-	});
-
-	// Lift the toasts clear of the round tray.
-	$effect(() => {
-		document.body.style.setProperty('--tray', roundCount ? '76px' : '0px');
-		return () => document.body.style.removeProperty('--tray');
-	});
-
-	function bump(id: string, by: number) {
-		const next = Math.min(20, Math.max(0, (round[id] ?? 0) + by));
-		if (next === 0) delete round[id];
-		else round[id] = next;
-		if (roundCount === 0) roundDialog?.close();
-	}
 
 	function opine() {
 		let n = lastOpinion;
@@ -201,7 +151,7 @@
 	<title>{menu?.event ? `${menu.event.name} · ` : ''}The Pretentious Peacock</title>
 </svelte:head>
 
-<main class="wrap menu" class:has-round={roundCount > 0}>
+<main class="wrap menu">
 	<div class="hero">
 		<div class="bird"><Peacock bind:this={peacock} onruffle={opine} /></div>
 		<p class="opinion note" aria-live="polite">
@@ -274,7 +224,6 @@
 					</h2>
 					<ul class="drinks">
 						{#each group.items as item (item.id)}
-							{@const qty = round[item.id] ?? 0}
 							{@const profile = PROFILE_BY_ID.get(item.profile)}
 							<li
 								id={`drink-${item.id}`}
@@ -307,17 +256,6 @@
 									</div>
 									<div class="side">
 										{#if !openBar}<span class="price">{money(item.price, currency)}</span>{/if}
-										<button
-											type="button"
-											class="add"
-											class:has={qty > 0}
-											aria-label={`Add a ${item.name} to your round${qty ? `, ${qty} so far` : ''}`}
-											onclick={() => bump(item.id, 1)}
-										>
-											{#key qty}
-												<span in:scale={{ start: 0.4, duration: calm(250) }}>{qty || '+'}</span>
-											{/key}
-										</button>
 									</div>
 								</div>
 								{#if open === item.id}
@@ -326,7 +264,7 @@
 											<caption class="eyebrow">In the glass</caption>
 											<tbody>
 												{#each item.ingredients as ing (ing.name)}
-													{@const [first, second] = measures(ing.amount)}
+													{@const [first, second] = measures(ing.amount, ing.each)}
 													<tr>
 														<th scope="row">{ing.name}{ing.optional ? ' (optional)' : ''}</th>
 														<td>{first}</td>
@@ -371,73 +309,6 @@
 	</footer>
 </main>
 
-{#if roundCount > 0}
-	<div class="tray" transition:fly={{ y: 90, duration: calm(350) }}>
-		<div class="wrap tray-in">
-			<p>
-				<span class="eyebrow">Your round</span>
-				<b>
-					{roundCount}
-					{roundCount === 1 ? 'drink' : 'drinks'}{openBar ? '' : ` · ${money(roundTotal, currency)}`}
-				</b>
-			</p>
-			<button type="button" class="btn primary" onclick={() => roundDialog?.showModal()}>
-				Show the bartender
-			</button>
-		</div>
-	</div>
-{/if}
-
-<dialog bind:this={roundDialog} aria-labelledby="round-title">
-	<p class="eyebrow">For your bartender</p>
-	<h2 id="round-title">Your round</h2>
-	<ul>
-		{#each roundLines as line (line.item.id)}
-			<li>
-				<span class="name">{line.item.name}</span>
-				<span class="qty">
-					<button
-						type="button"
-						class="btn small quiet"
-						aria-label={`One fewer ${line.item.name}`}
-						onclick={() => bump(line.item.id, -1)}>−</button
-					>
-					<b>{line.qty}</b>
-					<button
-						type="button"
-						class="btn small quiet"
-						aria-label={`One more ${line.item.name}`}
-						onclick={() => bump(line.item.id, 1)}>+</button
-					>
-				</span>
-				{#if !openBar}<span class="price">{money(line.item.price * line.qty, currency)}</span>{/if}
-			</li>
-		{/each}
-	</ul>
-	{#if openBar}
-		<p class="muted small">Show this at the bar. It is an open bar, so there is nothing to pay.</p>
-	{:else}
-		<p class="spread total">
-			<span class="eyebrow">Total</span>
-			<b class="price">{money(roundTotal, currency)}</b>
-		</p>
-		<p class="muted small">Show this at the bar. You pay the bartender, in cash or digitally.</p>
-	{/if}
-	<div class="row">
-		<button type="button" class="btn primary" onclick={() => roundDialog?.close()}>Done</button>
-		<button
-			type="button"
-			class="btn quiet"
-			onclick={() => {
-				round = {};
-				roundDialog?.close();
-			}}
-		>
-			Clear round
-		</button>
-	</div>
-</dialog>
-
 <style>
 	.open-bar {
 		display: inline-block;
@@ -453,9 +324,6 @@
 	.menu {
 		max-width: 720px;
 		padding-block: 20px 48px;
-	}
-	.menu.has-round {
-		padding-bottom: 130px;
 	}
 	.hero {
 		text-align: center;
@@ -633,40 +501,6 @@
 		font-size: 20px;
 		padding-top: 18px;
 	}
-	.add {
-		position: relative;
-		z-index: 1;
-		width: 44px;
-		height: 44px;
-		border-radius: 50%;
-		border: 1px solid var(--gilt);
-		background: transparent;
-		color: var(--gilt);
-		font: inherit;
-		font-size: 20px;
-		font-weight: 600;
-		line-height: 1;
-		display: grid;
-		place-items: center;
-		cursor: pointer;
-		transition:
-			background 200ms,
-			transform 150ms;
-	}
-	.add span {
-		display: block;
-		padding-top: 3px;
-	}
-	.add:hover {
-		background: rgb(226 185 136 / 0.15);
-	}
-	.add:active {
-		transform: scale(0.9);
-	}
-	.add.has {
-		background: var(--gilt);
-		color: var(--ink);
-	}
 	.more {
 		margin: 0;
 		padding: 16px 0 0 62px;
@@ -719,113 +553,6 @@
 		opacity: 0.7;
 	}
 
-	.tray {
-		position: fixed;
-		inset: auto 0 0 0;
-		z-index: 20;
-		background: var(--olive-deep);
-		border-top: 1px solid var(--gilt);
-		padding-bottom: env(safe-area-inset-bottom, 0px);
-	}
-	.tray-in {
-		max-width: 720px;
-		min-height: 76px;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-	}
-	.tray p {
-		display: grid;
-	}
-	.tray b {
-		font-weight: 400;
-		font-size: 19px;
-		color: var(--gilt);
-	}
-
-	dialog {
-		width: min(calc(100% - 32px), 460px);
-		background: var(--vellum);
-		color: var(--ink);
-		border: 0;
-		padding: 28px 24px 24px;
-	}
-	dialog::backdrop {
-		background: rgb(20 24 12 / 0.75);
-	}
-	dialog[open] {
-		animation: rise 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
-	}
-	@keyframes rise {
-		from {
-			opacity: 0;
-			transform: translateY(20px);
-		}
-	}
-	dialog .eyebrow,
-	dialog .muted {
-		color: #5a5f48;
-	}
-	dialog h2 {
-		color: var(--ink);
-		font-size: 34px;
-		margin-bottom: 10px;
-	}
-	dialog ul {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-	}
-	dialog li {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 4px 12px;
-		padding: 12px 0;
-		border-bottom: 1px solid #cdbf9f;
-	}
-	dialog li .name {
-		grid-column: 1 / -1;
-		font-family: var(--f-display);
-		font-size: 24px;
-		line-height: 1.2;
-	}
-	dialog .qty {
-		display: inline-flex;
-		align-items: center;
-		gap: 14px;
-	}
-	dialog .qty .btn {
-		min-width: 40px;
-		font-size: 18px;
-		color: var(--ink);
-		border-color: #cdbf9f;
-	}
-	dialog .price {
-		color: var(--gilt-deep);
-	}
-	dialog .total {
-		padding: 14px 0 6px;
-	}
-	dialog .total b {
-		font-family: var(--f-display);
-		font-weight: 400;
-		font-size: 32px;
-	}
-	dialog .small {
-		font-size: 15px;
-		margin-bottom: 18px;
-	}
-	dialog .btn.primary {
-		background: var(--olive);
-		border-color: var(--olive);
-		color: var(--gilt);
-	}
-	dialog .btn.quiet {
-		color: #5a5f48;
-		border-color: #cdbf9f;
-	}
 
 	@media (max-width: 480px) {
 		h3 {
@@ -836,11 +563,6 @@
 		}
 		.more {
 			padding-left: 0;
-		}
-	}
-	@media (prefers-reduced-motion: reduce) {
-		dialog[open] {
-			animation: none;
 		}
 	}
 </style>
