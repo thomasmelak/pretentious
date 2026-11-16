@@ -5,6 +5,7 @@
 	import { bar } from '#lib/bar.svelte.ts';
 	import Count from '#lib/components/Count.svelte';
 	import GlassIcon from '#lib/components/GlassIcon.svelte';
+	import PriceEdit from '#lib/components/PriceEdit.svelte';
 	import { money } from '#lib/format.ts';
 	import { calm } from '#lib/motion.ts';
 	import { menuRows, missing } from '#lib/shared/logic.ts';
@@ -45,21 +46,6 @@
 		const items = makeable.map((c) => ({ recipeId: c.recipe.id, price: c.recipe.price }));
 		bar.dispatch({ type: 'menu.add', eventId: event.id, items });
 		toasts.push(`${items.length} drinks added. The menu looks rather well.`, 'ok');
-	}
-
-	/** Tab and Enter move down the prices; Shift+Enter moves up; Shift+Delete takes a drink off. */
-	function priceKeys(e: KeyboardEvent & { currentTarget: HTMLInputElement }, recipeId: string) {
-		const all = [...document.querySelectorAll<HTMLInputElement>('input.price-input')];
-		const at = all.indexOf(e.currentTarget);
-		if (e.key === 'Enter') {
-			e.preventDefault();
-			all[at + (e.shiftKey ? -1 : 1)]?.focus();
-		} else if (e.key === 'Delete' && e.shiftKey && event) {
-			e.preventDefault();
-			const next = all[at + 1] ?? all[at - 1];
-			bar.dispatch({ type: 'menu.remove', eventId: event.id, recipeId });
-			requestAnimationFrame(() => next?.focus());
-		}
 	}
 </script>
 
@@ -134,28 +120,17 @@
 								<span class="badge out">Hidden · needs {names(row.missing)}</span>
 							{/if}
 						</div>
-						<label class="price-field">
-							Price
-							<input
-								type="number"
-								min="0"
-								step="0.5"
-								value={row.price}
-								class="price-input"
-								aria-label={`Price of ${row.recipe.name}`}
-								aria-keyshortcuts="Enter Shift+Delete"
-								onfocus={(e) => e.currentTarget.select()}
-								onkeydown={(e) => priceKeys(e, row.recipe.id)}
-								onchange={(e) =>
-									bar.dispatch({
-										type: 'menu.price',
-										eventId: event.id,
-										recipeId: row.recipe.id,
-										price: Number(e.currentTarget.value)
-									})}
-							/>
-						</label>
-						<!-- Out of the tab order, so Tab runs down the prices. Shift+Delete in a price removes it. -->
+						<PriceEdit
+							value={row.price}
+							currency={bar.core.currency}
+							name={row.recipe.name}
+							group="event-menu"
+							onsave={(price) =>
+								bar.dispatch({ type: 'menu.price', eventId: event.id, recipeId: row.recipe.id, price })}
+							onremove={() =>
+								bar.dispatch({ type: 'menu.remove', eventId: event.id, recipeId: row.recipe.id })}
+						/>
+						<!-- Out of the tab order, so Tab runs down the prices. Shift+Delete while editing a price removes it. -->
 						<button
 							class="btn small quiet"
 							tabindex="-1"
@@ -299,9 +274,6 @@
 	}
 	.off h3 {
 		color: var(--muted);
-	}
-	.price-field {
-		width: 104px;
 	}
 	.page-head a {
 		text-decoration: none;
