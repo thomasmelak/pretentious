@@ -1,10 +1,12 @@
-import { INGREDIENTS, RECIPES } from './catalog.ts';
+import { INGREDIENTS, PROFILES, RECIPES } from './catalog.ts';
 import type {
 	BarEvent,
 	CoreState,
+	Family,
 	Ingredient,
 	Order,
 	OrderInput,
+	Profile,
 	PublicMenu,
 	Recipe
 } from './types.ts';
@@ -21,12 +23,44 @@ export function emptyCore(): CoreState {
 	};
 }
 
-export const allIngredients = (core: CoreState): Ingredient[] => [
-	...INGREDIENTS,
-	...core.customIngredients
-];
+/**
+ * Built-ins first, in their usual order, each replaced by the bar's edited version when
+ * there is one; then the bar's own additions.
+ */
+function merge<T extends { id: string }>(builtIn: T[], mine: T[]): T[] {
+	const byId = new Map(mine.map((x) => [x.id, x]));
+	const builtInIds = new Set(builtIn.map((x) => x.id));
+	return [...builtIn.map((x) => byId.get(x.id) ?? x), ...mine.filter((x) => !builtInIds.has(x.id))];
+}
 
-export const allRecipes = (core: CoreState): Recipe[] => [...RECIPES, ...core.customRecipes];
+export const allIngredients = (core: CoreState): Ingredient[] =>
+	merge(INGREDIENTS, core.customIngredients);
+
+export const allRecipes = (core: CoreState): Recipe[] => merge(RECIPES, core.customRecipes);
+
+/** The family of the first required ingredient that has one: a Negroni is a gin drink. */
+export function spiritOf(recipe: Recipe, ingredients: Map<string, Ingredient>): Family | null {
+	for (const i of recipe.ingredients) {
+		if (i.optional) continue;
+		const family = ingredients.get(i.id)?.family;
+		if (family) return family;
+	}
+	return null;
+}
+
+/** A recipe's flavour profile, worked out from its style when it was never set. */
+export function profileOf(recipe: Pick<Recipe, 'profile' | 'style'>): Profile {
+	if (recipe.profile && PROFILES.some((p) => p.id === recipe.profile)) return recipe.profile;
+	const style = recipe.style.toLowerCase();
+	if (/bitter/.test(style)) return 'bitter';
+	if (/sour|tart|citrus/.test(style)) return 'sour';
+	if (/long|fizz|sparkling|highball|spritz/.test(style)) return 'long';
+	if (/rich|sweet|cream|dessert|coffee|tropical/.test(style)) return 'rich';
+	return 'stirred';
+}
+
+/** A neutral gold for drinks that were given no colour. */
+export const DEFAULT_COLOR = '#E2B988';
 
 export function ingredientNames(core: CoreState): Map<string, string> {
 	return new Map(allIngredients(core).map((i) => [i.id, i.name]));
@@ -83,7 +117,7 @@ export const activeEvent = (core: CoreState): BarEvent | null =>
 /** The guest menu: the active event's drinks, minus anything that cannot be made right now. */
 export function publicMenu(core: CoreState): PublicMenu {
 	const event = activeEvent(core);
-	const names = ingredientNames(core);
+	const ingredients = new Map(allIngredients(core).map((i) => [i.id, i]));
 	return {
 		rev: core.rev,
 		currency: core.currency,
@@ -95,10 +129,18 @@ export function publicMenu(core: CoreState): PublicMenu {
 						id: recipe.id,
 						name: recipe.name,
 						style: recipe.style,
+						glass: recipe.glass,
 						note: recipe.note,
-						ingredients: recipe.ingredients
-							.filter((i) => !i.optional)
-							.map((i) => names.get(i.id) ?? i.id),
+						garnish: recipe.garnish,
+						method: recipe.method,
+						color: recipe.color || DEFAULT_COLOR,
+						profile: profileOf(recipe),
+						spirit: spiritOf(recipe, ingredients),
+						ingredients: recipe.ingredients.map((i) => ({
+							name: ingredients.get(i.id)?.name ?? i.id,
+							amount: i.amount,
+							...(i.optional ? { optional: true } : {})
+						})),
 						price
 					}))
 			: []
@@ -174,4 +216,26 @@ export function slug(text: string): string {
 		.replace(/[^a-z0-9]+/g, '-')
 		.replace(/^-+|-+$/g, '')
 		.slice(0, 40);
+}
+
+/** "Stirred · Bitter" reads as a technique and a mood. Guests browse by mood. */
+export function mood(style: string): string {
+	const parts = style.split('·').map((part) => part.trim());
+	return parts[parts.length - 1] || 'House';
+}
+
+/** What changed between two versions of the guest menu, by drink. */
+export function menuChanges(before: PublicMenu, after: PublicMenu) {
+	const was = new Map(before.items.map((i) => [i.id, i.name]));
+	const now = new Map(after.items.map((i) => [i.id, i.name]));
+	return {
+		gone: [...was].filter(([id]) => !now.has(id)).map(([, name]) => name),
+		back: [...now].filter(([id]) => !was.has(id)).map(([, name]) => name)
+	};
+}
+
+/** "Negroni", "Negroni and Mojito", "Negroni, Mojito and Gimlet". */
+export function listNames(names: string[]): string {
+	if (names.length <= 1) return names.join('');
+	return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }

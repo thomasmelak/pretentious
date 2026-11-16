@@ -1,9 +1,11 @@
-export function money(amount: number, currency: string): string {
+export function money(amount: number, currency: string, digits?: number): string {
+	const fraction = digits ?? (Number.isInteger(amount) ? 0 : 2);
 	try {
 		return new Intl.NumberFormat(undefined, {
 			style: 'currency',
 			currency,
-			minimumFractionDigits: Number.isInteger(amount) ? 0 : 2
+			minimumFractionDigits: fraction,
+			maximumFractionDigits: Math.max(fraction, 2)
 		}).format(amount);
 	} catch {
 		return `${amount.toFixed(2)} ${currency}`;

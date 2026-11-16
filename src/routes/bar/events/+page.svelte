@@ -1,8 +1,14 @@
 <script lang="ts">
 	import qrcode from 'qrcode-generator';
+	import { flip } from 'svelte/animate';
+	import { scale } from 'svelte/transition';
 	import { bar } from '#lib/bar.svelte.ts';
+	import Count from '#lib/components/Count.svelte';
 	import { eventDate, money, newId } from '#lib/format.ts';
+	import { calm } from '#lib/motion.ts';
 	import { menuRows, totals } from '#lib/shared/logic.ts';
+	import type { BarEvent } from '#lib/shared/types.ts';
+	import { toasts } from '#lib/toast.svelte.ts';
 
 	let name = $state('');
 	let date = $state('');
@@ -30,8 +36,25 @@
 
 	async function create(e: SubmitEvent) {
 		e.preventDefault();
+		const first = bar.core.events.length === 0;
 		const ok = await bar.dispatch({ type: 'event.create', id: newId(), name, date });
-		if (ok) name = date = '';
+		if (ok) {
+			toasts.push(
+				first ? `${name.trim()} created, and live. Now give it a menu.` : `${name.trim()} created.`,
+				'ok'
+			);
+			name = date = '';
+		}
+	}
+
+	function goLive(event: BarEvent) {
+		bar.dispatch({ type: 'event.activate', id: event.id });
+		toasts.push(`${event.name} is live. Guests now see its menu.`, 'ok');
+	}
+
+	function end(event: BarEvent) {
+		bar.dispatch({ type: 'event.activate', id: null });
+		toasts.push(`${event.name} has ended. The guest menu is resting.`);
 	}
 </script>
 
@@ -55,7 +78,13 @@
 		<div class="grid">
 			{#each cards as c (c.event.id)}
 				{@const live = bar.core.activeEventId === c.event.id}
-				<article class="card" class:live>
+				<article
+					class="card"
+					class:live
+					animate:flip={{ duration: calm(350) }}
+					in:scale={{ start: 0.92, duration: calm(350) }}
+					out:scale={{ start: 0.92, duration: calm(200) }}
+				>
 					<div class="spread">
 						<p class="eyebrow">{c.event.date ? eventDate(c.event.date) : 'No date set'}</p>
 						{#if live}<span class="badge pick">Live</span>{/if}
@@ -65,26 +94,19 @@
 						{c.drinks} on the menu · {c.available} available now
 					</p>
 					<dl>
-						<div><dt>Cash</dt><dd>{money(c.takings.cash, bar.core.currency)}</dd></div>
-						<div><dt>Digital</dt><dd>{money(c.takings.digital, bar.core.currency)}</dd></div>
-						<div><dt>Total</dt><dd>{money(c.takings.total, bar.core.currency)}</dd></div>
+						<div><dt>Cash</dt><dd><Count value={c.takings.cash} currency={bar.core.currency} /></dd></div>
+						<div>
+							<dt>Digital</dt>
+							<dd><Count value={c.takings.digital} currency={bar.core.currency} /></dd>
+						</div>
+						<div><dt>Total</dt><dd><Count value={c.takings.total} currency={bar.core.currency} /></dd></div>
 					</dl>
 					<div class="row actions">
 						<a class="btn small primary" href={`#/bar/events/${c.event.id}`}>Edit menu</a>
 						{#if !live}
-							<button
-								class="btn small"
-								onclick={() => bar.dispatch({ type: 'event.activate', id: c.event.id })}
-							>
-								Go live
-							</button>
+							<button class="btn small" onclick={() => goLive(c.event)}>Go live</button>
 						{:else}
-							<button
-								class="btn small quiet"
-								onclick={() => bar.dispatch({ type: 'event.activate', id: null })}
-							>
-								End
-							</button>
+							<button class="btn small quiet" onclick={() => end(c.event)}>End</button>
 						{/if}
 						<button
 							class="btn small quiet"
@@ -136,6 +158,10 @@
 	}
 	.live {
 		border-color: var(--peacock);
+		box-shadow: 0 0 0 1px var(--peacock);
+	}
+	article.card:hover {
+		transform: translateY(-3px);
 	}
 	dl {
 		display: grid;

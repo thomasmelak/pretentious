@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import head from '#lib/assets/head.svg';
+	import { slide } from 'svelte/transition';
 	import { bar } from '#lib/bar.svelte.ts';
+	import { calm } from '#lib/motion.ts';
+	import { ticket } from '#lib/stores/ticket.ts';
+	import { wizard } from '#lib/stores/wizard.ts';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
@@ -13,9 +17,20 @@
 		{ href: '#/bar/orders', id: '/bar/orders', label: 'Orders' }
 	];
 
+	const here = $derived(page.route.id ?? '');
+	const draftName = $derived($wizard.draft.name.trim() || 'Untitled recipe');
+	const openDrinks = $derived(
+		$ticket.eventId && $ticket.eventId === bar.core.activeEventId
+			? Object.values($ticket.lines).reduce((n, q) => n + q, 0)
+			: 0
+	);
+	const badge = (id: string) =>
+		id === '/bar/recipes' && $wizard.open ? '•' : id === '/bar/orders' && openDrinks ? String(openDrinks) : '';
+
 	let pin = $state('');
 	let signingIn = $state(false);
 	let signInError = $state('');
+	let refusals = $state(0);
 
 	$effect(() => {
 		bar.start();
@@ -30,6 +45,7 @@
 			pin = '';
 		} catch (err) {
 			signInError = err instanceof Error ? err.message : 'Something went wrong.';
+			refusals++;
 		} finally {
 			signingIn = false;
 		}
@@ -45,17 +61,34 @@
 		<div class="wrap bar">
 			<a class="brand" href="#/" aria-label="Guest menu">
 				<img src={head} alt="" width="40" height="40" />
-				<span>The Pretentious Peacock</span>
+				<span class="eyebrow">Behind the bar</span>
 			</a>
 			<nav aria-label="Bar">
 				{#each tabs as tab (tab.id)}
-					<a
-						href={tab.href}
-						aria-current={page.route.id?.startsWith(tab.id) ? 'page' : undefined}>{tab.label}</a
-					>
+					<a href={tab.href} aria-current={here.startsWith(tab.id) ? 'page' : undefined}>
+						{tab.label}
+						{#if badge(tab.id)}
+							<span class="dot" aria-label={tab.id === '/bar/orders' ? 'order in progress' : 'recipe in progress'}
+								>{badge(tab.id)}</span
+							>
+						{/if}
+					</a>
 				{/each}
 			</nav>
 		</div>
+		{#if ($wizard.open && !here.startsWith('/bar/recipes')) || (openDrinks && !here.startsWith('/bar/orders'))}
+			<div class="resume" transition:slide={{ duration: calm(250) }}>
+				<div class="wrap row">
+					<span class="eyebrow">Waiting for you</span>
+					{#if $wizard.open && !here.startsWith('/bar/recipes')}
+						<a href="#/bar/recipes">Recipe: {draftName} →</a>
+					{/if}
+					{#if openDrinks && !here.startsWith('/bar/orders')}
+						<a href="#/bar/orders">Order: {openDrinks} {openDrinks === 1 ? 'drink' : 'drinks'} →</a>
+					{/if}
+				</div>
+			</div>
+		{/if}
 	</header>
 
 	<main class="wrap body">
@@ -77,7 +110,8 @@
 		<img src={head} alt="" width="96" height="96" />
 		<h1>Behind the bar</h1>
 		<p class="note">Staff only. Guests, your menu is the other way.</p>
-		<form onsubmit={signIn}>
+		{#key refusals}
+		<form onsubmit={signIn} class:refused={refusals > 0}>
 			<label>
 				Bar passphrase
 				<input
@@ -89,12 +123,17 @@
 				/>
 			</label>
 			{#if signInError || bar.error}
-				<p id="gate-error" class="error" role="alert">{signInError || bar.error}</p>
+				<p id="gate-error" class="error" role="alert">
+					{signInError === 'Wrong passphrase.'
+						? 'Wrong passphrase. The peacock is unimpressed.'
+						: signInError || bar.error}
+				</p>
 			{/if}
 			<button class="btn primary" disabled={signingIn}>
 				{signingIn ? 'Checking' : 'Sign in'}
 			</button>
 		</form>
+		{/key}
 		<a href="#/" class="eyebrow">Back to the menu</a>
 	</main>
 {/if}
@@ -106,6 +145,7 @@
 		position: sticky;
 		top: 0;
 		z-index: 5;
+		view-transition-name: bar-header;
 	}
 	.bar {
 		display: flex;
@@ -120,9 +160,12 @@
 		gap: 10px;
 		padding: 8px 0;
 		text-decoration: none;
-		font-family: var(--f-display);
-		font-size: 21px;
-		letter-spacing: 0.04em;
+	}
+	.brand img {
+		transition: transform 500ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+	.brand:hover img {
+		transform: rotate(-10deg) scale(1.08);
 	}
 	nav {
 		display: flex;
@@ -140,6 +183,34 @@
 		color: var(--muted);
 		border-bottom: 2px solid transparent;
 		white-space: nowrap;
+	}
+	.dot {
+		display: inline-grid;
+		place-items: center;
+		min-width: 18px;
+		height: 18px;
+		padding: 2px 5px 0;
+		margin-left: 4px;
+		border-radius: 9px;
+		background: var(--gilt);
+		color: var(--ink);
+		font-size: 11px;
+		letter-spacing: 0;
+		vertical-align: 1px;
+	}
+	.resume {
+		border-top: 1px solid var(--line);
+		background: rgb(226 185 136 / 0.1);
+	}
+	.resume .row {
+		padding-block: 8px 6px;
+		gap: 6px 20px;
+	}
+	.resume a {
+		text-decoration: none;
+	}
+	.resume a:hover {
+		text-decoration: underline;
 	}
 	nav a[aria-current='page'] {
 		color: var(--gilt);
@@ -187,6 +258,24 @@
 	}
 	.error {
 		color: var(--out);
+	}
+	.refused {
+		animation: shake 400ms ease-in-out;
+	}
+	.gate img {
+		animation: arrive 900ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+	}
+	@keyframes arrive {
+		from {
+			opacity: 0;
+			transform: translateY(-16px) rotate(-12deg);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.refused,
+		.gate img {
+			animation: none;
+		}
 	}
 	.gate a {
 		text-decoration: none;

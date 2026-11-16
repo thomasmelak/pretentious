@@ -1,5 +1,5 @@
-import { CATEGORIES, INGREDIENTS, RECIPES } from './catalog.ts';
-import type { CoreState, MenuItem, Op, Recipe } from './types.ts';
+import { CATEGORIES, FAMILIES, INGREDIENTS, PROFILES, RECIPES } from './catalog.ts';
+import type { Category, CoreState, Family, Ingredient, MenuItem, Op, Recipe } from './types.ts';
 
 const text = (value: unknown, max: number): string =>
 	String(value ?? '')
@@ -14,8 +14,30 @@ const price = (value: unknown): number => {
 const builtInIngredients = new Set(INGREDIENTS.map((i) => i.id));
 const builtInRecipes = new Set(RECIPES.map((r) => r.id));
 
+const color = (value: unknown): string | undefined => {
+	const c = text(value, 7);
+	return /^#[0-9a-fA-F]{6}$/.test(c) ? c.toUpperCase() : undefined;
+};
+
+function cleanFamily(category: Category, value: unknown): Family | undefined {
+	if (category !== 'spirit') return undefined;
+	return FAMILIES.find((f) => f.id === value)?.id;
+}
+
+function cleanIngredient(input: Ingredient): Ingredient {
+	const name = text(input.name, 60);
+	if (!name) throw new Error('Give the ingredient a name.');
+	if (!CATEGORIES.some((c) => c.id === input.category)) throw new Error('Unknown category.');
+	const family = cleanFamily(input.category, input.family);
+	return { id: text(input.id, 60), name, category: input.category, ...(family ? { family } : {}) };
+}
+
 function cleanRecipe(input: Recipe): Recipe {
+	const profile = PROFILES.find((p) => p.id === input.profile)?.id;
+	const hex = color(input.color);
 	return {
+		...(profile ? { profile } : {}),
+		...(hex ? { color: hex } : {}),
 		id: text(input.id, 60),
 		name: text(input.name, 80),
 		style: text(input.style, 80),
@@ -63,17 +85,38 @@ export function applyOp(state: CoreState, op: Op): CoreState {
 			const id = text(op.id, 60);
 			const name = text(op.name, 60);
 			if (!id || !name) throw new Error('Give the ingredient a name.');
-			if (!CATEGORIES.some((c) => c.id === op.category)) throw new Error('Unknown category.');
 			if (builtInIngredients.has(id) || s.customIngredients.some((i) => i.id === id)) {
 				throw new Error(`${name} is already in the list.`);
 			}
-			s.customIngredients.push({ id, name, category: op.category, custom: true });
+			const clean = cleanIngredient({ id, name, category: op.category, family: op.family });
+			s.customIngredients.push({ ...clean, custom: true });
 			if (!s.stock.includes(id)) s.stock.push(id);
 			break;
 		}
+		case 'ingredient.update': {
+			const clean = cleanIngredient(op.ingredient);
+			const index = s.customIngredients.findIndex((i) => i.id === clean.id);
+			if (builtInIngredients.has(clean.id)) {
+				// Editing a built-in keeps its id, so recipes that use it follow along.
+				const edited = { ...clean, edited: true };
+				if (index === -1) s.customIngredients.push(edited);
+				else s.customIngredients[index] = edited;
+			} else if (index === -1) {
+				throw new Error('That ingredient no longer exists.');
+			} else {
+				s.customIngredients[index] = { ...clean, custom: true };
+			}
+			break;
+		}
 		case 'ingredient.remove': {
-			if (s.customRecipes.some((r) => r.ingredients.some((i) => i.id === op.id))) {
-				throw new Error('A house recipe still uses this ingredient.');
+			if (builtInIngredients.has(op.id)) {
+				// A built-in cannot be deleted; this puts back its original name and shelf.
+				s.customIngredients = s.customIngredients.filter((i) => i.id !== op.id);
+				break;
+			}
+			const users = s.customRecipes.filter((r) => r.ingredients.some((i) => i.id === op.id));
+			if (users.length) {
+				throw new Error(`${users.map((r) => r.name).join(', ')} still ${users.length > 1 ? 'use' : 'uses'} this ingredient.`);
 			}
 			s.customIngredients = s.customIngredients.filter((i) => i.id !== op.id);
 			s.stock = s.stock.filter((id) => id !== op.id);
@@ -89,9 +132,25 @@ export function applyOp(state: CoreState, op: Op): CoreState {
 			s.customRecipes.push(recipe);
 			break;
 		}
+		case 'recipe.update': {
+			const recipe = cleanRecipe(op.recipe);
+			const index = s.customRecipes.findIndex((r) => r.id === recipe.id);
+			const classic = builtInRecipes.has(recipe.id);
+			if (index === -1 && !classic) throw new Error('That recipe no longer exists.');
+			if (!recipe.name) throw new Error('Give the drink a name.');
+			if (recipe.ingredients.length === 0) throw new Error('Add at least one ingredient.');
+			// A changed classic keeps its id, so every menu it is on picks up the change.
+			const saved = classic ? { ...recipe, custom: undefined, edited: true } : recipe;
+			if (index === -1) s.customRecipes.push(saved);
+			else s.customRecipes[index] = saved;
+			break;
+		}
 		case 'recipe.remove': {
 			s.customRecipes = s.customRecipes.filter((r) => r.id !== op.id);
-			for (const e of s.events) e.items = e.items.filter((i) => i.recipeId !== op.id);
+			// Removing the bar's version of a classic restores the original, which stays on menus.
+			if (!builtInRecipes.has(op.id)) {
+				for (const e of s.events) e.items = e.items.filter((i) => i.recipeId !== op.id);
+			}
 			break;
 		}
 		case 'event.create': {
