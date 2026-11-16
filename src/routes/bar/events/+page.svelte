@@ -88,6 +88,7 @@
 					<div class="spread">
 						<p class="eyebrow">{c.event.date ? eventDate(c.event.date) : 'No date set'}</p>
 						{#if live}<span class="badge pick">Live</span>{/if}
+						{#if c.event.openBar}<span class="badge ok">Open bar</span>{/if}
 					</div>
 					<h2>{c.event.name}</h2>
 					<p class="muted">

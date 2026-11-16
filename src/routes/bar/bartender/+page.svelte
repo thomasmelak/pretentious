@@ -160,7 +160,7 @@
 					{/each}
 				</ol>
 				<p class="muted small">
-					{list.reduce((n, r) => n + r.qty, 0)} drinks in this order, paid {order.payment}.
+					{list.reduce((n, r) => n + r.qty, 0)} drinks in this order, {order.payment === 'open' ? 'open bar' : `paid ${order.payment}`}.
 				</p>
 			</section>
 

@@ -319,3 +319,23 @@ test('the bartender works through waiting orders, oldest first', () => {
 	assertEquals(scaled('22.5 ml', 2), ['45 ml', '1½ oz']);
 	assertEquals(scaled('2 dashes', 3), null);
 });
+
+test('an open bar hides prices and takes no payment', () => {
+	const core = run([
+		{ type: 'event.create', id: 'e1', name: 'Launch', date: '' },
+		{ type: 'menu.add', eventId: 'e1', items: [{ recipeId: 'negroni', price: 12 }] },
+		{ type: 'stock.set', ids: ['gin', 'campari', 'sweet-vermouth'], inStock: true },
+		{ type: 'event.openBar', id: 'e1', open: true }
+	]);
+	const menu = publicMenu(core);
+	assertEquals(menu.event?.openBar, true);
+	assertEquals(menu.items.map((i) => i.price), [0]);
+	const o = buildOrder(core, { eventId: 'e1', payment: 'cash', lines: [{ recipeId: 'negroni', qty: 2 }] }, 'a', '');
+	assertEquals([o.payment, o.total, o.lines[0].price], ['open', 0, 0]);
+	assertEquals(totals([o]).drinks, 2);
+	assertEquals(totals([o]).total, 0);
+	// Closing the open bar brings the prices back.
+	const paid = applyOp(core, { type: 'event.openBar', id: 'e1', open: false });
+	assertEquals(publicMenu(paid).items[0].price, 12);
+	assertThrows(() => buildOrder(paid, { eventId: 'e1', payment: 'open', lines: [{ recipeId: 'negroni', qty: 1 }] }, 'b', ''));
+});

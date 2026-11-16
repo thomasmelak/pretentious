@@ -170,6 +170,12 @@ export function applyOp(state: CoreState, op: Op): CoreState {
 			e.date = text(op.date, 10);
 			break;
 		}
+		case 'event.openBar': {
+			const e = event(op.id);
+			if (op.open) e.openBar = true;
+			else delete e.openBar;
+			break;
+		}
 		case 'event.delete': {
 			s.events = s.events.filter((e) => e.id !== op.id);
 			if (s.activeEventId === op.id) s.activeEventId = null;

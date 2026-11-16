@@ -122,7 +122,7 @@ export function publicMenu(core: CoreState): PublicMenu {
 	return {
 		rev: core.rev,
 		currency: core.currency,
-		event: event ? { name: event.name, date: event.date } : null,
+		event: event ? { name: event.name, date: event.date, ...(event.openBar ? { openBar: true } : {}) } : null,
 		items: event
 			? menuRows(core, event)
 					.filter((row) => row.available)
@@ -142,7 +142,8 @@ export function publicMenu(core: CoreState): PublicMenu {
 							amount: i.amount,
 							...(i.optional ? { optional: true } : {})
 						})),
-						price
+						// At an open bar the prices stay behind the bar.
+						price: event.openBar ? 0 : price
 					}))
 			: []
 	};
@@ -154,8 +155,11 @@ const cents = (n: number) => Math.round(n * 100);
 export function buildOrder(core: CoreState, input: OrderInput, id: string, at: string): Order {
 	const event = core.events.find((e) => e.id === input.eventId);
 	if (!event) throw new Error('That event no longer exists.');
-	if (input.payment !== 'cash' && input.payment !== 'digital') {
-		throw new Error('Payment must be cash or digital.');
+	// An open bar takes no payment, whatever the till sent.
+	const payment = event.openBar ? 'open' : input.payment;
+	if (payment !== 'cash' && payment !== 'digital') {
+		if (payment !== 'open') throw new Error('Payment must be cash or digital.');
+		if (!event.openBar) throw new Error('This event is not an open bar.');
 	}
 	const rows = new Map(menuRows(core, event).map((row) => [row.recipe.id, row]));
 	const lines = [];
@@ -165,8 +169,9 @@ export function buildOrder(core: CoreState, input: OrderInput, id: string, at: s
 		if (!(qty > 0) || qty > 99) continue;
 		const row = rows.get(line.recipeId);
 		if (!row) throw new Error('A drink in this order is not on the menu.');
-		lines.push({ recipeId: row.recipe.id, name: row.recipe.name, price: row.price, qty });
-		total += cents(row.price) * qty;
+		const price = payment === 'open' ? 0 : row.price;
+		lines.push({ recipeId: row.recipe.id, name: row.recipe.name, price, qty });
+		total += cents(price) * qty;
 	}
 	if (lines.length === 0) throw new Error('The order is empty.');
 	return {
@@ -175,7 +180,7 @@ export function buildOrder(core: CoreState, input: OrderInput, id: string, at: s
 		at,
 		lines,
 		total: total / 100,
-		payment: input.payment,
+		payment,
 		voided: false,
 		status: 'waiting'
 	};
@@ -258,7 +263,7 @@ export function totals(orders: Order[]): Totals {
 		count++;
 		drinks += o.lines.reduce((n, l) => n + l.qty, 0);
 		if (o.payment === 'cash') cash += cents(o.total);
-		else digital += cents(o.total);
+		else if (o.payment === 'digital') digital += cents(o.total);
 	}
 	return {
 		cash: cash / 100,

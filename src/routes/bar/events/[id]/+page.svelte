@@ -95,6 +95,25 @@
 		<button class="btn">Save details</button>
 	</form>
 
+	<label class="card open-bar" class:on={event.openBar}>
+		<input
+			type="checkbox"
+			checked={Boolean(event.openBar)}
+			onchange={(e) => {
+				const open = e.currentTarget.checked;
+				bar.dispatch({ type: 'event.openBar', id: event.id, open });
+				toasts.push(open ? 'Open bar. Prices are hidden from guests and the till.' : 'Prices are back.', 'ok');
+			}}
+		/>
+		<span>
+			<b>Open bar</b>
+			<span class="muted">
+				No prices on the guest menu or the till, and orders go straight to the bar without payment.
+				The prices below are kept for next time.
+			</span>
+		</span>
+	</label>
+
 	<section>
 		<div class="section-head"><h2>On the menu</h2></div>
 		{#if rows.length}
@@ -204,6 +223,41 @@
 {/if}
 
 <style>
+	.open-bar {
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 14px;
+		margin: 12px 0 28px;
+		cursor: pointer;
+		text-transform: none;
+		letter-spacing: normal;
+		font-weight: 400;
+		font-size: 16px;
+		color: var(--vellum);
+	}
+	.open-bar input {
+		width: 22px;
+		min-height: 22px;
+		height: 22px;
+		margin-top: 2px;
+		accent-color: var(--gilt);
+		flex: none;
+	}
+	.open-bar > span {
+		display: grid;
+		gap: 4px;
+	}
+	.open-bar b {
+		font-size: 13px;
+		font-weight: 600;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		color: var(--gilt);
+	}
+	.open-bar.on {
+		border-color: var(--gilt);
+		background: rgb(226 185 136 / 0.08);
+	}
 	.details {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

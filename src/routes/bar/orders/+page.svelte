@@ -17,6 +17,7 @@
 	const orders = $derived(event ? bar.orders.filter((o) => o.eventId === event.id) : []);
 	const sums = $derived(totals(orders));
 	const cur = $derived(bar.core.currency);
+	const openBar = $derived(Boolean(event?.openBar));
 	const ready = $derived(event ? queue(bar.orders, event.id, 'ready') : []);
 	const numbers = $derived(orderNumbers(bar.orders));
 	const recipes = $derived(new Map(bar.recipes.map((r) => [r.id, r])));
@@ -67,7 +68,12 @@
 		});
 		sending = false;
 		if (ok) {
-			toasts.push(`${money(due, cur)} paid ${payment === 'cash' ? 'in cash' : 'digitally'}. Sent to the bar.`, 'ok');
+			toasts.push(
+				payment === 'open'
+					? 'Sent to the bar. On the house.'
+					: `${money(due, cur)} paid ${payment === 'cash' ? 'in cash' : 'digitally'}. Sent to the bar.`,
+				'ok'
+			);
 			clearTicket();
 		}
 	}
@@ -112,12 +118,17 @@
 		</section>
 	{/if}
 
-	<div class="stats" aria-label="Takings">
-		<div class="stat"><span class="eyebrow">Cash</span><b><Count value={sums.cash} currency={cur} /></b></div>
-		<div class="stat">
-			<span class="eyebrow">Digital</span><b><Count value={sums.digital} currency={cur} /></b>
-		</div>
-		<div class="stat"><span class="eyebrow">Total</span><b><Count value={sums.total} currency={cur} /></b></div>
+	<div class="stats" aria-label={openBar ? 'Tonight so far' : 'Takings'}>
+		{#if openBar}
+			<div class="stat"><span class="eyebrow">Open bar</span><b>On the house</b></div>
+			<div class="stat"><span class="eyebrow">Orders</span><b><Count value={sums.orders} /></b></div>
+		{:else}
+			<div class="stat"><span class="eyebrow">Cash</span><b><Count value={sums.cash} currency={cur} /></b></div>
+			<div class="stat">
+				<span class="eyebrow">Digital</span><b><Count value={sums.digital} currency={cur} /></b>
+			</div>
+			<div class="stat"><span class="eyebrow">Total</span><b><Count value={sums.total} currency={cur} /></b></div>
+		{/if}
 		<div class="stat"><span class="eyebrow">Drinks</span><b><Count value={sums.drinks} /></b></div>
 	</div>
 
@@ -145,7 +156,7 @@
 							/>
 							<span class="name">{row.recipe.name}</span>
 							{#if row.available}
-								<span class="price">{money(row.price, cur)}</span>
+								{#if !openBar}<span class="price">{money(row.price, cur)}</span>{/if}
 							{:else}
 								<span class="badge out">86'd</span>
 							{/if}
@@ -189,22 +200,28 @@
 									onclick={() => bump(l.row.recipe.id, 1)}>+</button
 								>
 							</span>
-							<span class="price">{money(l.row.price * l.qty, cur)}</span>
+							{#if !openBar}<span class="price">{money(l.row.price * l.qty, cur)}</span>{/if}
 						</li>
 					{/each}
 				</ul>
-				<div class="spread due">
-					<span class="eyebrow">Due</span>
-					<b class="price"><Count value={due} currency={cur} /></b>
-				</div>
-				<div class="pay">
-					<button class="btn primary" disabled={sending} onclick={() => pay('cash')}>
-						Paid cash
+				{#if openBar}
+					<button class="btn primary" disabled={sending} onclick={() => pay('open')}>
+						Send to the bar
 					</button>
-					<button class="btn primary" disabled={sending} onclick={() => pay('digital')}>
-						Paid digital
-					</button>
-				</div>
+				{:else}
+					<div class="spread due">
+						<span class="eyebrow">Due</span>
+						<b class="price"><Count value={due} currency={cur} /></b>
+					</div>
+					<div class="pay">
+						<button class="btn primary" disabled={sending} onclick={() => pay('cash')}>
+							Paid cash
+						</button>
+						<button class="btn primary" disabled={sending} onclick={() => pay('digital')}>
+							Paid digital
+						</button>
+					</div>
+				{/if}
 				<button class="btn small quiet" onclick={clearTicket}>Clear</button>
 			{:else}
 				<p class="muted">Tap drinks to start an order.</p>
@@ -235,8 +252,8 @@
 								</span>
 							{/if}
 						</span>
-						<span class="eyebrow pay-kind">{o.voided ? 'Voided' : o.payment}</span>
-						<span class="price">{money(o.total, cur)}</span>
+						<span class="eyebrow pay-kind">{o.voided ? 'Voided' : o.payment === 'open' ? 'Open bar' : o.payment}</span>
+						<span class="price">{o.payment === 'open' ? '' : money(o.total, cur)}</span>
 						<button class="btn small quiet" onclick={() => bar.setVoided(o, !o.voided)}>
 							{o.voided ? 'Restore' : 'Void'}
 						</button>

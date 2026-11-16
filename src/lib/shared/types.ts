@@ -68,6 +68,8 @@ export interface BarEvent {
 	/** ISO date, yyyy-mm-dd. May be empty. */
 	date: string;
 	items: MenuItem[];
+	/** Drinks are on the house: no prices anywhere, and orders go straight to the bar. */
+	openBar?: boolean;
 }
 
 /** Everything except orders. Stored as one document. */
@@ -82,7 +84,8 @@ export interface CoreState {
 	activeEventId: string | null;
 }
 
-export type Payment = 'cash' | 'digital';
+/** 'open' is an order at an open bar: nobody pays for it. */
+export type Payment = 'cash' | 'digital' | 'open';
 
 export interface OrderLine {
 	recipeId: string;
@@ -122,7 +125,7 @@ export interface OrderInput {
 export interface PublicMenu {
 	rev: number;
 	currency: string;
-	event: { name: string; date: string } | null;
+	event: { name: string; date: string; openBar?: boolean } | null;
 	items: {
 		id: string;
 		name: string;
@@ -152,6 +155,7 @@ export type Op =
 	| { type: 'event.update'; id: string; name: string; date: string }
 	| { type: 'event.delete'; id: string }
 	| { type: 'event.activate'; id: string | null }
+	| { type: 'event.openBar'; id: string; open: boolean }
 	| { type: 'menu.add'; eventId: string; items: MenuItem[] }
 	| { type: 'menu.remove'; eventId: string; recipeId: string }
 	| { type: 'menu.price'; eventId: string; recipeId: string; price: number }
