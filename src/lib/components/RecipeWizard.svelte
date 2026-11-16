@@ -475,7 +475,7 @@
 	}
 	.head h2 {
 		font-size: 32px;
-		overflow-wrap: anywhere;
+		overflow-wrap: break-word;
 	}
 	.steps {
 		list-style: none;
@@ -870,8 +870,13 @@
 		align-items: center;
 	}
 	.pv h3 {
+		min-width: 0;
 		font-size: 26px;
-		overflow-wrap: anywhere;
+		overflow-wrap: break-word;
+	}
+	.pv .price {
+		flex: none;
+		white-space: nowrap;
 	}
 	.badge-line {
 		display: flex;
