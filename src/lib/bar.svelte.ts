@@ -23,6 +23,7 @@ class Bar {
 	ingredients = $derived(allIngredients(this.core));
 	recipes = $derived(allRecipes(this.core));
 	names = $derived(ingredientNames(this.core));
+	shelves = $derived(new Map(this.ingredients.map((i) => [i.id, i.category])));
 	active = $derived(activeEvent(this.core));
 	suggestions = $derived(suggest(this.recipes, this.core.stock));
 

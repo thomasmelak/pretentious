@@ -150,7 +150,8 @@ export interface PublicMenu {
 		profile: Profile;
 		/** Base spirit family, or null for aperitifs and liqueur-led drinks. */
 		spirit: Family | null;
-		ingredients: { name: string; amount: string; optional?: boolean }[];
+		/** `each` marks a count of pieces, such as one olive, rather than ounces. */
+		ingredients: { name: string; amount: string; optional?: boolean; each?: boolean }[];
 		price: number;
 	}[];
 }

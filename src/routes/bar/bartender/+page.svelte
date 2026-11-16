@@ -21,7 +21,7 @@
 		type Supply,
 		type Round
 	} from '#lib/shared/logic.ts';
-	import { formatMl, formatOz, measures, scaled } from '#lib/shared/measure.ts';
+	import { countable, formatMl, formatOz, measures, scaled } from '#lib/shared/measure.ts';
 	import type { Order, Recipe } from '#lib/shared/types.ts';
 	import { pour } from '#lib/stores/pour.ts';
 	import { toasts } from '#lib/toast.svelte.ts';
@@ -306,8 +306,9 @@
 						</thead>
 						<tbody>
 							{#each recipe.ingredients as i (i.id)}
-								{@const [main, other] = measures(i.amount)}
-								{@const total = scaled(i.amount, current.qty)}
+								{@const each = countable(i.amount, bar.shelves.get(i.id))}
+								{@const [main, other] = measures(i.amount, each)}
+								{@const total = scaled(i.amount, current.qty, each)}
 								<tr class:optional={i.optional}>
 									<td>{bar.names.get(i.id) ?? i.id}{i.optional ? ' (optional)' : ''}</td>
 									<td>

@@ -18,7 +18,7 @@ import {
 	suggest,
 	totals
 } from '../src/lib/shared/logic.ts';
-import { convertQuantity, measures, parseQuantity, scaled, usage } from '../src/lib/shared/measure.ts';
+import { convertQuantity, countable, measures, parseQuantity, scaled, usage } from '../src/lib/shared/measure.ts';
 import { applyOp } from '../src/lib/shared/reducer.ts';
 import type { CoreState, Op } from '../src/lib/shared/types.ts';
 
@@ -371,4 +371,19 @@ test('making drinks uses up counted ingredients and warns when they run low', ()
 	assertEquals([full.levels?.campari.left, full.stock.includes('campari')], [700, true]);
 	// Ingredients nobody counts are left alone.
 	assertEquals(applyOp(full, { type: 'pour', recipeId: 'negroni', qty: 1 }).levels, { campari: { unit: 'ml', full: 700, left: 670 } });
+});
+
+test('a bare number of a garnish is a count, not ounces', () => {
+	assertEquals(countable('1', 'fresh'), true);
+	assertEquals(countable('1 oz', 'fresh'), false);
+	assertEquals(countable('1', 'spirit'), false);
+	assertEquals(measures('1', true), ['1']);
+	assertEquals(scaled('1', 3, true), null);
+	const core = run([
+		{ type: 'event.create', id: 'e1', name: 'Launch', date: '' },
+		{ type: 'menu.add', eventId: 'e1', items: [{ recipeId: 'martini', price: 14 }] },
+		{ type: 'stock.set', ids: ['gin', 'dry-vermouth'], inStock: true }
+	]);
+	const olives = publicMenu(core).items[0].ingredients.find((i) => i.name === 'Olives');
+	assertEquals(olives?.each, true);
 });
