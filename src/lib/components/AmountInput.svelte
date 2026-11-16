@@ -3,6 +3,7 @@
 	switch, and the other unit is shown beside the field as you type.
 -->
 <script lang="ts">
+	import Dropdown from '#lib/components/Dropdown.svelte';
 	import { convertQuantity, measures, parseQuantity, type Unit } from '#lib/shared/measure.ts';
 
 	interface Props {
@@ -69,15 +70,14 @@
 		aria-label={`${label}: amount`}
 		maxlength="10"
 	/>
-	<select
+	<Dropdown
+		label={`${label}: unit`}
+		size="mini"
+		search={false}
+		options={UNITS.map((u) => ({ value: u, label: u }))}
 		value={unit}
-		onchange={(e) => changeUnit(e.currentTarget.value)}
-		aria-label={`${label}: unit`}
-	>
-		{#each UNITS as u (u)}
-			<option value={u}>{u}</option>
-		{/each}
-	</select>
+		onchange={changeUnit}
+	/>
 	<span class="other" class:warn={other.startsWith('Try')} aria-live="polite">{other}</span>
 </div>
 
