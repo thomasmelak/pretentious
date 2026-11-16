@@ -88,6 +88,19 @@ export function applyOp(state: CoreState, op: Op): CoreState {
 			s.levels = { ...s.levels, [id]: { unit, full, left: Math.min(amount(op.left), full) } };
 			break;
 		}
+		case 'cost.set': {
+			const id = text(op.id, 60);
+			if (!allIngredients(s).some((i) => i.id === id)) throw new Error('That ingredient no longer exists.');
+			const size = amount(op.size);
+			if (!size) throw new Error('Say how much the price buys.');
+			const unit = op.unit === 'each' ? 'each' : 'ml';
+			s.costs = { ...s.costs, [id]: { price: price(op.price), size, unit } };
+			break;
+		}
+		case 'cost.clear': {
+			if (s.costs) delete s.costs[op.id];
+			break;
+		}
 		case 'level.clear': {
 			if (s.levels) delete s.levels[op.id];
 			break;
@@ -164,6 +177,8 @@ export function applyOp(state: CoreState, op: Op): CoreState {
 			}
 			s.customIngredients = s.customIngredients.filter((i) => i.id !== op.id);
 			s.stock = s.stock.filter((id) => id !== op.id);
+			if (s.costs) delete s.costs[op.id];
+			if (s.levels) delete s.levels[op.id];
 			break;
 		}
 		case 'recipe.add': {
@@ -218,6 +233,13 @@ export function applyOp(state: CoreState, op: Op): CoreState {
 			const e = event(op.id);
 			if (op.open) e.openBar = true;
 			else delete e.openBar;
+			break;
+		}
+		case 'event.expect': {
+			const e = event(op.id);
+			const n = Math.round(Number(op.drinks));
+			if (Number.isFinite(n) && n > 0) e.expect = Math.min(n, 100000);
+			else delete e.expect;
 			break;
 		}
 		case 'event.delete': {

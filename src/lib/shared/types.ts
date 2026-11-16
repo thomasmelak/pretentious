@@ -70,6 +70,8 @@ export interface BarEvent {
 	items: MenuItem[];
 	/** Drinks are on the house: no prices anywhere, and orders go straight to the bar. */
 	openBar?: boolean;
+	/** How many drinks the bar expects to pour, for the budget. */
+	expect?: number;
 }
 
 /** Everything except orders. Stored as one document. */
@@ -84,6 +86,18 @@ export interface CoreState {
 	activeEventId: string | null;
 	/** How much is left of the ingredients the bar keeps count of, by ingredient id. */
 	levels?: Record<string, Level>;
+	/** What the bar pays for its ingredients, by ingredient id. */
+	costs?: Record<string, Cost>;
+}
+
+/**
+ * What the bar pays for an ingredient: `price` for one bottle, carton, bag or piece of
+ * `size`. Liquids are sized in millilitres, garnishes and the like one at a time.
+ */
+export interface Cost {
+	price: number;
+	size: number;
+	unit: 'ml' | 'each';
 }
 
 /**
@@ -169,12 +183,15 @@ export type Op =
 	| { type: 'event.delete'; id: string }
 	| { type: 'event.activate'; id: string | null }
 	| { type: 'event.openBar'; id: string; open: boolean }
+	| { type: 'event.expect'; id: string; drinks: number }
 	| { type: 'menu.add'; eventId: string; items: MenuItem[] }
 	| { type: 'menu.remove'; eventId: string; recipeId: string }
 	| { type: 'menu.price'; eventId: string; recipeId: string; price: number }
 	| { type: 'currency.set'; currency: string }
 	| { type: 'level.set'; id: string; unit: Level['unit']; full: number; left: number }
 	| { type: 'level.clear'; id: string }
+	| { type: 'cost.set'; id: string; price: number; size: number; unit: Cost['unit'] }
+	| { type: 'cost.clear'; id: string }
 	/** Back to full, and in stock. */
 	| { type: 'level.restock'; id: string }
 	/** Drinks made: use up their ingredients. A negative qty puts them back (undo). */

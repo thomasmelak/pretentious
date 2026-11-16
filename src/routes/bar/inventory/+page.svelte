@@ -5,6 +5,7 @@
 	import Count from '#lib/components/Count.svelte';
 	import Dropdown from '#lib/components/Dropdown.svelte';
 	import IngredientIcon from '#lib/components/IngredientIcon.svelte';
+	import { money } from '#lib/format.ts';
 	import { calm } from '#lib/motion.ts';
 	import { CATEGORIES, FAMILIES, INGREDIENTS } from '#lib/shared/catalog.ts';
 	import { LOW_AT, listNames, menuRows, slug, supplies } from '#lib/shared/logic.ts';
@@ -166,6 +167,9 @@
 	let unit = $state<'ml' | 'oz' | 'each'>('ml');
 	let full = $state('');
 	let left = $state('');
+	let costPrice = $state('');
+	let costSize = $state('');
+	let costUnit = $state<'ml' | 'oz' | 'each'>('ml');
 	const original = (id: string) => INGREDIENTS.find((i) => i.id === id);
 
 	function openCard(item: Ingredient) {
@@ -179,6 +183,49 @@
 		unit = level?.unit === 'each' ? 'each' : 'ml';
 		full = level ? String(level.full) : '';
 		left = level ? String(Math.max(0, level.left)) : '';
+		const cost = bar.core.costs?.[item.id];
+		costUnit = cost?.unit ?? level?.unit ?? (item.category === 'fresh' ? 'each' : 'ml');
+		costPrice = cost ? String(cost.price) : '';
+		costSize = cost ? String(cost.size) : level && level.unit === costUnit ? String(level.full) : '';
+	}
+
+	function switchCostUnit(next: 'ml' | 'oz' | 'each') {
+		const n = Number(costSize);
+		if (costSize && Number.isFinite(n)) {
+			if (costUnit === 'ml' && next === 'oz') costSize = String(Math.round((n / ML_PER_OZ) * 100) / 100);
+			if (costUnit === 'oz' && next === 'ml') costSize = String(Math.round(n * ML_PER_OZ * 100) / 100);
+		}
+		costUnit = next;
+	}
+
+	async function saveCost(e: SubmitEvent) {
+		e.preventDefault();
+		if (!editing) return;
+		const size = Number(costSize || (costUnit === 'each' ? 1 : 0)) * (costUnit === 'oz' ? ML_PER_OZ : 1);
+		const ok = await bar.dispatch({
+			type: 'cost.set',
+			id: editing.id,
+			price: Number(costPrice),
+			size,
+			unit: costUnit === 'each' ? 'each' : 'ml'
+		});
+		if (ok) toasts.push(`${editing.name} priced. Every drink that uses it now has a cost.`, 'ok');
+	}
+
+	async function clearCost(id: string) {
+		if (await bar.dispatch({ type: 'cost.clear', id })) {
+			costPrice = '';
+			costSize = '';
+		}
+	}
+
+	/** "$28 for 700 ml", "$0.40 each", "$12 for 12". */
+	function costText(id: string): string | null {
+		const c = bar.core.costs?.[id];
+		if (!c) return null;
+		const cur = bar.core.currency;
+		if (c.unit === 'each') return c.size === 1 ? `${money(c.price, cur)} each` : `${money(c.price, cur)} for ${c.size}`;
+		return `${money(c.price, cur)} for ${c.size} ml`;
 	}
 
 	function switchUnit(next: 'ml' | 'oz' | 'each') {
@@ -461,9 +508,10 @@
 							{/if}
 						</p>
 					{/if}
+					{#if costText(item.id)}<p class="cost">{costText(item.id)}</p>{/if}
 					<button
 						class="more"
-						aria-label={`Count or edit ${item.name}`}
+						aria-label={`Count, price or edit ${item.name}`}
 						aria-expanded={openId === item.id}
 						onclick={() => openCard(item)}
 					>
@@ -503,6 +551,46 @@
 						{#if s}
 							<button type="button" class="btn small" onclick={() => editing && refill(editing.id, editing.name)}>Restocked</button>
 							<button type="button" class="btn small quiet" onclick={() => editing && stopCounting(editing.id, editing.name)}>Stop counting</button>
+						{/if}
+					</div>
+				</form>
+
+				<form class="part" onsubmit={saveCost}>
+					<p class="eyebrow">Price it</p>
+					<p class="muted small">
+						What you pay, and for how much: a 700 ml bottle, a litre of juice, a bag of 24 limes or one
+						egg. Each drink's cost and the menu budget on the event page are worked out from it.
+					</p>
+					<div class="fields">
+						<label>
+							Price paid
+							<input type="number" min="0" step="any" bind:value={costPrice} required placeholder="28" aria-describedby="cost-cur" />
+						</label>
+						<label>
+							For
+							<input
+								type="number"
+								min="0"
+								step="any"
+								bind:value={costSize}
+								required={costUnit !== 'each'}
+								placeholder={costUnit === 'each' ? '1' : costUnit === 'oz' ? '25' : '700'}
+							/>
+						</label>
+						<Dropdown label="Sized in" options={UNITS} value={costUnit} onchange={switchCostUnit} />
+					</div>
+					<p class="muted small" id="cost-cur">
+						{#if Number(costPrice) > 0 && Number(costSize || (costUnit === 'each' ? 1 : 0)) > 0}
+							{@const per = Number(costPrice) / (Number(costSize || 1) * (costUnit === 'oz' ? ML_PER_OZ : 1))}
+							That is {costUnit === 'each' ? `${money(per, bar.core.currency)} a piece` : `${money(per * ML_PER_OZ, bar.core.currency)} an ounce (30 ml)`}.
+						{:else}
+							Prices are in {bar.core.currency}.
+						{/if}
+					</p>
+					<div class="row">
+						<button class="btn small primary">{bar.core.costs?.[editing.id] ? 'Save price' : 'Set price'}</button>
+						{#if bar.core.costs?.[editing.id]}
+							<button type="button" class="btn small quiet" onclick={() => editing && clearCost(editing.id)}>Remove price</button>
 						{/if}
 					</div>
 				</form>
@@ -836,6 +924,12 @@
 	}
 	.low .level {
 		color: var(--out);
+	}
+	.cost {
+		margin: -4px 14px 12px;
+		font-size: 13px;
+		color: var(--gilt);
+		font-variant-numeric: tabular-nums;
 	}
 	.detail {
 		margin-top: 14px;

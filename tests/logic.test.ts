@@ -3,6 +3,9 @@ import { RECIPES } from '../src/lib/shared/catalog.ts';
 import { INGREDIENTS } from '../src/lib/shared/catalog.ts';
 import {
 	buildOrder,
+	drinkCost,
+	menuBudget,
+	pourCost,
 	emptyCore,
 	listNames,
 	menuChanges,
@@ -386,4 +389,45 @@ test('a bare number of a garnish is a count, not ounces', () => {
 	]);
 	const olives = publicMenu(core).items[0].ingredients.find((i) => i.name === 'Olives');
 	assertEquals(olives?.each, true);
+});
+
+test('drink cost and menu budget come from ingredient prices', () => {
+	let core = emptyCore();
+	const ops: Op[] = [
+		{ type: 'event.create', id: 'e1', name: 'Launch', date: '' },
+		{ type: 'menu.add', eventId: 'e1', items: [{ recipeId: 'negroni', price: 12 }, { recipeId: 'americano', price: 10 }] },
+		{ type: 'cost.set', id: 'gin', price: 21, size: 700, unit: 'ml' },
+		{ type: 'cost.set', id: 'campari', price: 28, size: 700, unit: 'ml' },
+		{ type: 'cost.set', id: 'sweet-vermouth', price: 20, size: 1000, unit: 'ml' }
+	];
+	for (const op of ops) core = applyOp(core, op);
+	const negroni = RECIPES.find((r) => r.id === 'negroni')!;
+	const americano = RECIPES.find((r) => r.id === 'americano')!;
+	// 30 ml each at 3, 4 and 2 cents a millilitre.
+	assertEquals(drinkCost(core, negroni), { cost: 2.7, unpriced: [] });
+	// The soda has no price yet, so it is named and left out.
+	assertEquals(drinkCost(core, americano).cost, 2.7);
+	assertEquals(drinkCost(core, americano).unpriced.length, 1);
+	assertEquals(pourCost(2.7, 12), 0.225);
+	assertEquals(pourCost(2.7, 0), null);
+
+	// 100 drinks, 50 of each: 1.5 l of gin is 3 bottles, 3.75 l of Campari 6, of vermouth 4.
+	const b = menuBudget(core, core.events[0], 100);
+	const buy = Object.fromEntries(b.shopping.map((p) => [p.id, [p.packs, p.spend]]));
+	assertEquals(buy.gin, [3, 63]);
+	assertEquals(buy.campari, [6, 168]);
+	assertEquals(buy['sweet-vermouth'], [4, 80]);
+	assertEquals(buy.soda, [null, null]);
+	assertEquals([b.avgCost, b.pourSpend, b.buySpend, b.takings], [2.7, 270, 311, 1100]);
+	// Only the Negroni has every ingredient priced.
+	assertEquals(b.priced, 1);
+	// An open bar takes nothing.
+	core = applyOp(core, { type: 'event.openBar', id: 'e1', open: true });
+	assertEquals(menuBudget(core, core.events[0], 100).takings, 0);
+	// The plan is kept on the event; clearing a price drops it from the sums.
+	core = applyOp(core, { type: 'event.expect', id: 'e1', drinks: 120 });
+	assertEquals(core.events[0].expect, 120);
+	core = applyOp(core, { type: 'cost.clear', id: 'gin' });
+	assertEquals(drinkCost(core, negroni).cost, 1.8);
+	expect(() => applyOp(core, { type: 'cost.set', id: 'gin', price: 21, size: 0, unit: 'ml' })).toThrow();
 });
