@@ -82,6 +82,18 @@ export interface CoreState {
 	customRecipes: Recipe[];
 	events: BarEvent[];
 	activeEventId: string | null;
+	/** How much is left of the ingredients the bar keeps count of, by ingredient id. */
+	levels?: Record<string, Level>;
+}
+
+/**
+ * A tracked ingredient: what a full restock holds and what is left. Liquids are counted
+ * in millilitres, garnishes and the like one at a time.
+ */
+export interface Level {
+	unit: 'ml' | 'each';
+	full: number;
+	left: number;
 }
 
 /** 'open' is an order at an open bar: nobody pays for it. */
@@ -159,4 +171,10 @@ export type Op =
 	| { type: 'menu.add'; eventId: string; items: MenuItem[] }
 	| { type: 'menu.remove'; eventId: string; recipeId: string }
 	| { type: 'menu.price'; eventId: string; recipeId: string; price: number }
-	| { type: 'currency.set'; currency: string };
+	| { type: 'currency.set'; currency: string }
+	| { type: 'level.set'; id: string; unit: Level['unit']; full: number; left: number }
+	| { type: 'level.clear'; id: string }
+	/** Back to full, and in stock. */
+	| { type: 'level.restock'; id: string }
+	/** Drinks made: use up their ingredients. A negative qty puts them back (undo). */
+	| { type: 'pour'; recipeId: string; qty: number };

@@ -1,4 +1,5 @@
 import { INGREDIENTS, PROFILES, RECIPES } from './catalog.ts';
+import { usage } from './measure.ts';
 import type {
 	BarEvent,
 	CoreState,
@@ -9,6 +10,7 @@ import type {
 	OrderStatus,
 	Profile,
 	PublicMenu,
+	Level,
 	Recipe
 } from './types.ts';
 
@@ -111,6 +113,55 @@ export function menuRows(core: CoreState, event: BarEvent): MenuRow[] {
 	}
 	return rows;
 }
+
+export interface Supply {
+	id: string;
+	name: string;
+	level: Level;
+	/** Drinks left at the biggest pour on the menu that uses it; null when nothing on it does. */
+	drinksLeft: number | null;
+	/** Drinks on the menu that need it. */
+	drinks: string[];
+}
+
+/** Drinks a level is warned about at: "about 5 drinks away from running out". */
+export const LOW_AT = 5;
+
+/** Every counted ingredient, with how many drinks it has left on this event's menu. */
+export function supplies(core: CoreState, event: BarEvent | null): Supply[] {
+	if (!core.levels) return [];
+	const ingredients = new Map(allIngredients(core).map((i) => [i.id, i]));
+	const rows = event ? menuRows(core, event) : [];
+	const out: Supply[] = [];
+	for (const [id, level] of Object.entries(core.levels)) {
+		const ingredient = ingredients.get(id);
+		if (!ingredient) continue;
+		let most = 0;
+		const drinks: string[] = [];
+		for (const row of rows) {
+			const line = row.recipe.ingredients.find((i) => i.id === id && !i.optional);
+			const use = line && usage(line.amount, ingredient.category);
+			if (!use || use.unit !== level.unit) continue;
+			drinks.push(row.recipe.name);
+			most = Math.max(most, use.n);
+		}
+		const left = Math.max(0, level.left);
+		out.push({
+			id,
+			name: ingredient.name,
+			level,
+			drinksLeft: most ? Math.floor(left / most + 1e-9) : null,
+			drinks
+		});
+	}
+	return out.sort((a, b) => (a.drinksLeft ?? 1e9) - (b.drinksLeft ?? 1e9) || a.name.localeCompare(b.name));
+}
+
+/** In stock, but enough for only a handful more drinks on tonight's menu. */
+export const runningLow = (core: CoreState, event: BarEvent | null): Supply[] =>
+	supplies(core, event).filter(
+		(s) => s.drinksLeft !== null && s.drinksLeft <= LOW_AT && core.stock.includes(s.id)
+	);
 
 export const activeEvent = (core: CoreState): BarEvent | null =>
 	core.events.find((e) => e.id === core.activeEventId) ?? null;

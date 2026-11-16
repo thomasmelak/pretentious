@@ -1,4 +1,6 @@
 import { CATEGORIES, FAMILIES, INGREDIENTS, PROFILES, RECIPES } from './catalog.ts';
+import { allIngredients, allRecipes } from './logic.ts';
+import { usage } from './measure.ts';
 import type { Category, CoreState, Family, Ingredient, MenuItem, Op, Recipe } from './types.ts';
 
 const text = (value: unknown, max: number): string =>
@@ -9,6 +11,11 @@ const text = (value: unknown, max: number): string =>
 const price = (value: unknown): number => {
 	const n = Math.round(Number(value) * 100) / 100;
 	return Number.isFinite(n) && n >= 0 ? Math.min(n, 100000) : 0;
+};
+
+const amount = (value: unknown): number => {
+	const n = Math.round(Number(value) * 100) / 100;
+	return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : 0;
 };
 
 const builtInIngredients = new Set(INGREDIENTS.map((i) => i.id));
@@ -72,6 +79,43 @@ export function applyOp(state: CoreState, op: Op): CoreState {
 	};
 
 	switch (op.type) {
+		case 'level.set': {
+			const id = text(op.id, 60);
+			if (!allIngredients(s).some((i) => i.id === id)) throw new Error('That ingredient no longer exists.');
+			const unit = op.unit === 'each' ? 'each' : 'ml';
+			const full = amount(op.full);
+			if (!full) throw new Error('Say how much a full restock holds.');
+			s.levels = { ...s.levels, [id]: { unit, full, left: Math.min(amount(op.left), full) } };
+			break;
+		}
+		case 'level.clear': {
+			if (s.levels) delete s.levels[op.id];
+			break;
+		}
+		case 'level.restock': {
+			const level = s.levels?.[op.id];
+			if (!level) throw new Error('That ingredient is not being counted.');
+			level.left = level.full;
+			if (!s.stock.includes(op.id)) s.stock.push(op.id);
+			break;
+		}
+		case 'pour': {
+			const qty = Math.trunc(Number(op.qty));
+			if (!s.levels || !qty || Math.abs(qty) > 999) break;
+			const recipe = allRecipes(s).find((r) => r.id === op.recipeId);
+			if (!recipe) break;
+			const category = new Map(allIngredients(s).map((i) => [i.id, i.category]));
+			for (const i of recipe.ingredients) {
+				const level = s.levels[i.id];
+				// Optional ingredients may or may not have gone in, so they are not counted.
+				if (!level || i.optional) continue;
+				const use = usage(i.amount, category.get(i.id));
+				if (!use || use.unit !== level.unit) continue;
+				// Allowed below zero, so an undo after running dry still adds up.
+				level.left = Math.round((level.left - use.n * qty) * 100) / 100;
+			}
+			break;
+		}
 		case 'stock.set': {
 			const stock = new Set(s.stock);
 			for (const id of op.ids) {

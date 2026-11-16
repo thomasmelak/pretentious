@@ -9,15 +9,19 @@
 	import {
 		countName,
 		DEFAULT_COLOR,
+		listNames,
+		menuRows,
 		orderNumbers,
 		profileOf,
 		queue,
 		queuedCounts,
 		rounds,
 		roundsText,
+		runningLow,
+		type Supply,
 		type Round
 	} from '#lib/shared/logic.ts';
-	import { measures, scaled } from '#lib/shared/measure.ts';
+	import { formatMl, formatOz, measures, scaled } from '#lib/shared/measure.ts';
 	import type { Order, Recipe } from '#lib/shared/types.ts';
 	import { pour } from '#lib/stores/pour.ts';
 	import { toasts } from '#lib/toast.svelte.ts';
@@ -38,6 +42,11 @@
 	const recipe = $derived<Recipe | undefined>(current ? recipes.get(current.recipeId) : undefined);
 	/** More of the same drink further down the queue: worth making in one go. */
 	const later = $derived(current ? (queuedCounts(upNext).get(current.recipeId) ?? 0) : 0);
+
+	// Ingredients that will run out within a few drinks. Dismissing one hides it until it drops further.
+	const low = $derived(event ? runningLow(bar.core, event) : []);
+	let snoozed = $state<Record<string, number>>({});
+	const warnings = $derived(low.filter((s) => !(s.id in snoozed) || (s.drinksLeft ?? 0) < snoozed[s.id]));
 
 	let busy = $state(false);
 	let lastReady = $state<Order | null>(null);
@@ -64,7 +73,30 @@
 
 	function makeRound() {
 		if (!order || !current) return;
-		pour.set({ orderId: order.id, done: [...done, current.recipeId] });
+		// Read the round before moving on: `current` becomes the next drink straight after.
+		const made = current;
+		pour.set({ orderId: order.id, done: [...done, made.recipeId] });
+		// Use up what went into them, for the ingredients the bar keeps count of.
+		bar.dispatch({ type: 'pour', recipeId: made.recipeId, qty: made.qty });
+	}
+
+	const leftText = (s: Supply) =>
+		s.level.unit === 'each'
+			? `${Math.max(0, s.level.left)} left`
+			: `${formatMl(Math.max(0, s.level.left) / 30)} ml (${formatOz(Math.max(0, s.level.left) / 30)} oz) left`;
+
+	async function restocked(s: Supply) {
+		if (await bar.dispatch({ type: 'level.restock', id: s.id })) {
+			toasts.push(`${s.name} restocked.`, 'ok');
+		}
+	}
+
+	async function eightySix(s: Supply) {
+		const before = new Set(event ? menuRows(bar.core, event).filter((r) => r.available).map((r) => r.recipe.name) : []);
+		if (!(await bar.dispatch({ type: 'stock.set', ids: [s.id], inStock: false }))) return;
+		const after = new Set(event ? menuRows(bar.core, event).filter((r) => r.available).map((r) => r.recipe.name) : []);
+		const gone = [...before].filter((n) => !after.has(n));
+		toasts.push(`${s.name} is 86'd.${gone.length ? ` Off the menu: ${listNames(gone)}.` : ''}`, 'out', 7000);
 	}
 
 	async function markReady() {
@@ -82,7 +114,10 @@
 	/** Step back: unmake the last drink, or pull the order just sent back onto the bar. */
 	async function undo() {
 		if (order && done.length) {
+			const last = done[done.length - 1];
 			pour.set({ orderId: order.id, done: done.slice(0, -1) });
+			const qty = list.find((r) => r.recipeId === last)?.qty ?? 0;
+			if (qty) bar.dispatch({ type: 'pour', recipeId: last, qty: -qty });
 			return;
 		}
 		if (!lastReady || busy) return;
@@ -137,6 +172,40 @@
 </div>
 
 {#if event}
+	{#if warnings.length}
+		<section class="low" aria-label="Running low" aria-live="polite">
+			{#each warnings as s (s.id)}
+				<div
+					class="warn"
+					class:empty={(s.drinksLeft ?? 0) === 0}
+					animate:flip={{ duration: calm(250) }}
+					in:fly={{ y: -12, duration: calm(300) }}
+					out:fade={{ duration: calm(150) }}
+				>
+					<div>
+						<span class="eyebrow">{(s.drinksLeft ?? 0) === 0 ? 'Out, by the count' : 'Running low'}</span>
+						<p>
+							<b>{s.name}</b>:
+							{(s.drinksLeft ?? 0) === 0
+								? 'not enough for another drink'
+								: `about ${s.drinksLeft} ${s.drinksLeft === 1 ? 'drink' : 'drinks'} left`}
+							<span class="muted">· {leftText(s)} · {listNames(s.drinks)}</span>
+						</p>
+					</div>
+					<div class="warn-actions">
+						<button class="btn small primary" onclick={() => restocked(s)}>Restocked</button>
+						<button class="btn small out" onclick={() => eightySix(s)}>86'd</button>
+						<button
+							class="btn small quiet"
+							aria-label={`Hide the warning for ${s.name}`}
+							onclick={() => (snoozed = { ...snoozed, [s.id]: s.drinksLeft ?? 0 })}>Later</button
+						>
+					</div>
+				</div>
+			{/each}
+		</section>
+	{/if}
+
 	{#if order}
 		<div class="stage">
 			<!-- The order: every drink in it, and how far along it is. -->
@@ -329,6 +398,43 @@
 {/if}
 
 <style>
+	.low {
+		display: grid;
+		gap: 8px;
+		margin-bottom: 20px;
+	}
+	.warn {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px 16px;
+		padding: 12px 16px;
+		border: 1px solid var(--gilt);
+		border-left-width: 4px;
+		background: rgb(226 185 136 / 0.08);
+	}
+	.warn .eyebrow {
+		color: var(--gilt);
+	}
+	.warn.empty {
+		border-color: var(--out);
+		background: rgb(217 140 108 / 0.1);
+	}
+	.warn.empty .eyebrow {
+		color: var(--out);
+	}
+	.warn p {
+		margin-top: 2px;
+	}
+	.warn-actions {
+		display: flex;
+		gap: 8px;
+	}
+	.btn.out {
+		border-color: var(--out);
+		color: var(--out);
+	}
 	.keys {
 		display: flex;
 		align-items: center;

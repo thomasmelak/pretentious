@@ -11,12 +11,14 @@ import {
 	orderNumbers,
 	queue,
 	roundsText,
+	runningLow,
+	supplies,
 	queuedCounts,
 	rounds,
 	suggest,
 	totals
 } from '../src/lib/shared/logic.ts';
-import { convertQuantity, measures, parseQuantity, scaled } from '../src/lib/shared/measure.ts';
+import { convertQuantity, measures, parseQuantity, scaled, usage } from '../src/lib/shared/measure.ts';
 import { applyOp } from '../src/lib/shared/reducer.ts';
 import type { CoreState, Op } from '../src/lib/shared/types.ts';
 
@@ -338,4 +340,35 @@ test('an open bar hides prices and takes no payment', () => {
 	const paid = applyOp(core, { type: 'event.openBar', id: 'e1', open: false });
 	assertEquals(publicMenu(paid).items[0].price, 12);
 	assertThrows(() => buildOrder(paid, { eventId: 'e1', payment: 'open', lines: [{ recipeId: 'negroni', qty: 1 }] }, 'b', ''));
+});
+
+test('making drinks uses up counted ingredients and warns when they run low', () => {
+	assertEquals(usage('1½ oz'), { n: 45, unit: 'ml' });
+	assertEquals(usage('2 dashes'), { n: 1.6, unit: 'ml' });
+	assertEquals(usage('6 leaves'), { n: 6, unit: 'each' });
+	assertEquals(usage('1', 'fresh'), { n: 1, unit: 'each' });
+	assertEquals(usage('Top'), { n: 90, unit: 'ml' });
+	let core = run([
+		{ type: 'event.create', id: 'e1', name: 'Launch', date: '' },
+		{ type: 'menu.add', eventId: 'e1', items: [{ recipeId: 'negroni', price: 12 }, { recipeId: 'americano', price: 10 }] },
+		{ type: 'stock.set', ids: ['gin', 'campari', 'sweet-vermouth', 'soda'], inStock: true },
+		// A 700 ml bottle with 300 ml left. The Americano pours 45 ml, so six of those.
+		{ type: 'level.set', id: 'campari', unit: 'ml', full: 700, left: 300 }
+	]);
+	const event = core.events[0];
+	assertEquals(supplies(core, event)[0].drinksLeft, 6);
+	assertEquals(runningLow(core, event), []);
+	core = applyOp(core, { type: 'pour', recipeId: 'negroni', qty: 5 });
+	assertEquals(core.levels?.campari.left, 150);
+	const low = runningLow(core, event);
+	assertEquals(low.map((s) => [s.id, s.drinksLeft]), [['campari', 3]]);
+	assertEquals(low[0].drinks.sort(), ['Americano', 'Negroni']);
+	// Undo puts it back; restocking fills it up and puts it in stock.
+	assertEquals(applyOp(core, { type: 'pour', recipeId: 'negroni', qty: -5 }).levels?.campari.left, 300);
+	const out = applyOp(core, { type: 'stock.set', ids: ['campari'], inStock: false });
+	assertEquals(runningLow(out, event), []);
+	const full = applyOp(out, { type: 'level.restock', id: 'campari' });
+	assertEquals([full.levels?.campari.left, full.stock.includes('campari')], [700, true]);
+	// Ingredients nobody counts are left alone.
+	assertEquals(applyOp(full, { type: 'pour', recipeId: 'negroni', qty: 1 }).levels, { campari: { unit: 'ml', full: 700, left: 670 } });
 });
