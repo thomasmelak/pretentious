@@ -1,0 +1,52 @@
+name: Deploy app
+
+# Deploys the bar app (site and API) to Cloudflare Workers with its D1 database,
+# after the checks pass on main.
+#
+# One-time setup, in Settings > Secrets and variables > Actions:
+#   CLOUDFLARE_API_TOKEN   a token with "Edit Cloudflare Workers" and "D1: Edit"
+#   CLOUDFLARE_ACCOUNT_ID  from the Cloudflare dashboard
+# The bar passphrase stays a Worker secret: npx wrangler secret put BAR_PIN
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'website/**'
+      - '.github/workflows/deploy-website.yml'
+      - '**.md'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-app
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.deployment-url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: Apply database migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply DB --remote
+      - name: Deploy the Worker
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
