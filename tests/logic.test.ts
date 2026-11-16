@@ -8,10 +8,15 @@ import {
 	menuChanges,
 	mood,
 	publicMenu,
+	orderNumbers,
+	queue,
+	roundsText,
+	queuedCounts,
+	rounds,
 	suggest,
 	totals
 } from '../src/lib/shared/logic.ts';
-import { convertQuantity, measures, parseQuantity } from '../src/lib/shared/measure.ts';
+import { convertQuantity, measures, parseQuantity, scaled } from '../src/lib/shared/measure.ts';
 import { applyOp } from '../src/lib/shared/reducer.ts';
 import type { CoreState, Op } from '../src/lib/shared/types.ts';
 
@@ -271,4 +276,46 @@ test('classics and built-in ingredients can be edited and restored', () => {
 		ingredient: { id: 'olmeca', name: 'Olmeca Chocolate', category: 'spirit', family: 'agave' }
 	});
 	assertEquals(core.customIngredients.find((i) => i.id === 'olmeca')?.family, 'agave');
+});
+
+test('the bartender works through waiting orders, oldest first', () => {
+	const core = run([
+		{ type: 'event.create', id: 'e1', name: 'Launch', date: '2026-11-20' },
+		{ type: 'menu.add', eventId: 'e1', items: [{ recipeId: 'negroni', price: 12 }, { recipeId: 'martini', price: 14 }] }
+	]);
+	const later = buildOrder(core, { eventId: 'e1', payment: 'cash', lines: [{ recipeId: 'martini', qty: 1 }] }, 'b', '2026-11-20T21:05:00Z');
+	const first = buildOrder(
+		core,
+		{
+			eventId: 'e1',
+			payment: 'digital',
+			lines: [
+				{ recipeId: 'negroni', qty: 2 },
+				{ recipeId: 'martini', qty: 1 },
+				{ recipeId: 'negroni', qty: 1 }
+			]
+		},
+		'a',
+		'2026-11-20T21:00:00Z'
+	);
+	assertEquals(first.status, 'waiting');
+	// Orders from before the queue have no status and are not waiting.
+	const legacy = { ...later, id: 'old', status: undefined };
+	const voided = { ...later, id: 'v', voided: true };
+	const ready = { ...later, id: 'm', status: 'ready' as const };
+	const all = [later, legacy, voided, ready, first];
+	const q = queue(all, 'e1');
+	assertEquals(q.map((o) => o.id), ['a', 'b']);
+	assertEquals(queue(all, 'e1', 'ready').map((o) => o.id), ['m']);
+	assertEquals(orderNumbers([later, first]).get('a'), 1);
+	assertEquals(roundsText(first), '3 Negronis and 1 Martini');
+	// The same drink rung up twice in one order is made as one round.
+	assertEquals(rounds(first), [
+		{ recipeId: 'negroni', name: 'Negroni', qty: 3 },
+		{ recipeId: 'martini', name: 'Martini', qty: 1 }
+	]);
+	assertEquals(Object.fromEntries(queuedCounts(q)), { negroni: 3, martini: 2 });
+	assertEquals(scaled('1 oz', 3), ['3 oz', '90 ml']);
+	assertEquals(scaled('22.5 ml', 2), ['45 ml', '1½ oz']);
+	assertEquals(scaled('2 dashes', 3), null);
 });

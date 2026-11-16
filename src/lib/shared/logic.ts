@@ -6,6 +6,7 @@ import type {
 	Ingredient,
 	Order,
 	OrderInput,
+	OrderStatus,
 	Profile,
 	PublicMenu,
 	Recipe
@@ -175,8 +176,67 @@ export function buildOrder(core: CoreState, input: OrderInput, id: string, at: s
 		lines,
 		total: total / 100,
 		payment: input.payment,
-		voided: false
+		voided: false,
+		status: 'waiting'
 	};
+}
+
+/** Orders taken before the queue existed have no status: they were served long ago. */
+export const statusOf = (order: Order): OrderStatus => order.status ?? 'served';
+
+/** An event's orders in one status, oldest first: the bartender works from the top. */
+export function queue(orders: Order[], eventId: string | null, status: OrderStatus = 'waiting'): Order[] {
+	return orders
+		.filter((o) => o.eventId === eventId && !o.voided && statusOf(o) === status)
+		.sort((a, b) => a.at.localeCompare(b.at));
+}
+
+/** Orders are numbered through the night, so the bartender can call "number 14". */
+export function orderNumbers(orders: Order[]): Map<string, number> {
+	const byEvent = new Map<string, Order[]>();
+	for (const o of orders) byEvent.set(o.eventId, [...(byEvent.get(o.eventId) ?? []), o]);
+	const numbers = new Map<string, number>();
+	for (const list of byEvent.values()) {
+		list.sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
+		list.forEach((o, i) => numbers.set(o.id, i + 1));
+	}
+	return numbers;
+}
+
+/** "5 Negronis and 6 Boulevardiers". */
+export function roundsText(order: Order): string {
+	return listNames(rounds(order).map((r) => countName(r.qty, r.name)));
+}
+
+/** "1 Negroni", "3 Negronis". */
+export const countName = (qty: number, name: string) => `${qty} ${qty === 1 ? name : plural(name)}`;
+
+const plural = (name: string) => (/(s|x|z|ch|sh)$/i.test(name) ? name : /[^aeiou]y$/i.test(name) ? `${name.slice(0, -1)}ies` : `${name}s`);
+
+export interface Round {
+	recipeId: string;
+	name: string;
+	qty: number;
+}
+
+/** What to make for an order: one row per drink, however many times it was rung up. */
+export function rounds(order: Order): Round[] {
+	const byId = new Map<string, Round>();
+	for (const line of order.lines) {
+		const round = byId.get(line.recipeId);
+		if (round) round.qty += line.qty;
+		else byId.set(line.recipeId, { recipeId: line.recipeId, name: line.name, qty: line.qty });
+	}
+	return [...byId.values()];
+}
+
+/** How many of each drink are still to be made across the queue. */
+export function queuedCounts(orders: Order[]): Map<string, number> {
+	const counts = new Map<string, number>();
+	for (const order of orders) {
+		for (const line of order.lines) counts.set(line.recipeId, (counts.get(line.recipeId) ?? 0) + line.qty);
+	}
+	return counts;
 }
 
 export interface Totals {

@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { flip } from 'svelte/animate';
+	import { onMount } from 'svelte';
 	import { fade, fly, slide } from 'svelte/transition';
 	import { bar } from '#lib/bar.svelte.ts';
 	import Count from '#lib/components/Count.svelte';
 	import GlassIcon from '#lib/components/GlassIcon.svelte';
 	import { clock, money } from '#lib/format.ts';
 	import { calm } from '#lib/motion.ts';
-	import { menuRows, profileOf, totals } from '#lib/shared/logic.ts';
+	import { menuRows, orderNumbers, profileOf, queue, roundsText, statusOf, totals } from '#lib/shared/logic.ts';
 	import type { Payment } from '#lib/shared/types.ts';
 	import { clearTicket, ticket } from '#lib/stores/ticket.ts';
 	import { toasts } from '#lib/toast.svelte.ts';
@@ -16,6 +17,16 @@
 	const orders = $derived(event ? bar.orders.filter((o) => o.eventId === event.id) : []);
 	const sums = $derived(totals(orders));
 	const cur = $derived(bar.core.currency);
+	const ready = $derived(event ? queue(bar.orders, event.id, 'ready') : []);
+	const numbers = $derived(orderNumbers(bar.orders));
+	const recipes = $derived(new Map(bar.recipes.map((r) => [r.id, r])));
+
+	// Keep an eye on the bar so finished drinks show up quickly.
+	onMount(() => bar.watch(4000));
+
+	async function pickedUp(o: (typeof ready)[number]) {
+		if (await bar.setStatus(o, 'served')) toasts.push(`Order ${numbers.get(o.id)} is on its way.`);
+	}
 
 	// The order in progress lives in a store, so it survives a trip to another screen.
 	const t = $derived<Record<string, number>>(
@@ -56,7 +67,7 @@
 		});
 		sending = false;
 		if (ok) {
-			toasts.push(`${money(due, cur)} paid ${payment === 'cash' ? 'in cash' : 'digitally'}. Cheers.`, 'ok');
+			toasts.push(`${money(due, cur)} paid ${payment === 'cash' ? 'in cash' : 'digitally'}. Sent to the bar.`, 'ok');
 			clearTicket();
 		}
 	}
@@ -76,6 +87,31 @@
 </div>
 
 {#if event}
+	{#if ready.length}
+		<section class="pickup" aria-label="Ready for pickup" aria-live="polite">
+			{#each ready as o (o.id)}
+				<div
+					class="ready"
+					animate:flip={{ duration: calm(250) }}
+					in:fly={{ y: -16, duration: calm(400) }}
+					out:slide={{ duration: calm(250) }}
+				>
+					<span class="glasses" aria-hidden="true">
+						{#each o.lines.slice(0, 4) as l (l.recipeId)}
+							{@const rec = recipes.get(l.recipeId)}
+							<GlassIcon glass={rec?.glass} size={30} color={rec?.color} fizz={rec ? profileOf(rec) === 'long' : false} />
+						{/each}
+					</span>
+					<div>
+						<span class="eyebrow">Ready for pickup · Order {numbers.get(o.id)}</span>
+						<p><b>{roundsText(o)}</b> {o.lines.reduce((n, l) => n + l.qty, 0) === 1 ? 'is' : 'are'} ready for you.</p>
+					</div>
+					<button class="btn primary small" onclick={() => pickedUp(o)}>Picked up</button>
+				</div>
+			{/each}
+		</section>
+	{/if}
+
 	<div class="stats" aria-label="Takings">
 		<div class="stat"><span class="eyebrow">Cash</span><b><Count value={sums.cash} currency={cur} /></b></div>
 		<div class="stat">
@@ -191,7 +227,13 @@
 					>
 						<span class="muted time">{clock(o.at)}</span>
 						<span class="items">
+							<b class="num">{numbers.get(o.id)}</b>
 							{o.lines.map((l) => `${l.qty} × ${l.name}`).join(', ')}
+							{#if !o.voided && statusOf(o) !== 'served'}
+								<span class="badge {statusOf(o) === 'ready' ? 'ok' : 'pick'}">
+									{statusOf(o) === 'ready' ? 'Ready' : 'At the bar'}
+								</span>
+							{/if}
 						</span>
 						<span class="eyebrow pay-kind">{o.voided ? 'Voided' : o.payment}</span>
 						<span class="price">{money(o.total, cur)}</span>
@@ -208,6 +250,65 @@
 {/if}
 
 <style>
+	.pickup {
+		display: grid;
+		gap: 10px;
+		margin: 0 0 24px;
+	}
+	.ready {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 12px 16px;
+		padding: 14px 16px;
+		border: 1px solid var(--available);
+		background: rgb(157 186 106 / 0.12);
+		animation: ring 1.2s ease-out 2;
+	}
+	.ready p {
+		margin-top: 2px;
+		font-size: 18px;
+	}
+	.ready .eyebrow {
+		color: var(--available);
+	}
+	.ready .glasses {
+		display: flex;
+		gap: 2px;
+	}
+	@keyframes ring {
+		0% {
+			box-shadow: 0 0 0 0 rgb(157 186 106 / 0.6);
+		}
+		100% {
+			box-shadow: 0 0 0 12px rgb(157 186 106 / 0);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.ready {
+			animation: none;
+		}
+	}
+	@media (max-width: 600px) {
+		.ready {
+			grid-template-columns: minmax(0, 1fr) auto;
+		}
+		.ready .glasses {
+			display: none;
+		}
+	}
+	.num {
+		color: var(--gilt);
+		margin-right: 6px;
+	}
+	.num::before {
+		content: '#';
+		opacity: 0.6;
+	}
+	.items .badge {
+		margin-left: 8px;
+		font-size: 11px;
+	}
 	.till {
 		display: grid;
 		grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);

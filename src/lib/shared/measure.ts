@@ -93,3 +93,12 @@ export function convertQuantity(text: string, from: Unit, to: Unit): string {
 	const oz = from === 'oz' ? n : n / ML_PER_OZ;
 	return to === 'oz' ? formatOz(oz).replace('≈', '') : formatMl(oz);
 }
+
+/** An amount for several drinks at once: "1½ oz" × 3 is ["4½ oz", "135 ml"]. Non-volumes stay as written. */
+export function scaled(amount: string, times: number): [string, string?] | null {
+	const v = parseVolume(amount);
+	if (!v || times <= 1) return null;
+	const oz = `${formatOz(v.oz * times)} oz`;
+	const ml = `${formatMl(v.oz * times)} ml`;
+	return v.unit === 'oz' ? [oz, ml] : [ml, oz];
+}

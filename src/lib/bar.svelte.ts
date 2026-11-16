@@ -8,7 +8,7 @@ import {
 	suggest
 } from './shared/logic.ts';
 import { applyOp } from './shared/reducer.ts';
-import type { CoreState, Op, Order, OrderInput } from './shared/types.ts';
+import type { CoreState, Op, Order, OrderInput, OrderStatus } from './shared/types.ts';
 
 const PIN_KEY = 'pp-bar-pin';
 const POLL_MS = 10_000;
@@ -132,6 +132,37 @@ class Bar {
 		} catch (err) {
 			await this.#recover(err);
 		}
+	}
+
+	/** Move an order along (bartender to waiter to guest) straight away, then confirm it. */
+	async setStatus(order: Order, status: OrderStatus): Promise<boolean> {
+		const at = new Date().toISOString();
+		this.orders = this.orders.map((o) =>
+			o.id === order.id
+				? { ...o, status, readyAt: status === 'waiting' ? undefined : (o.readyAt ?? at) }
+				: o
+		);
+		this.#pending++;
+		try {
+			const res = await api.orderStatus(this.#pin, order.id, status);
+			this.#pending--;
+			this.orders = this.orders.map((o) => (o.id === order.id ? res.order : o));
+			return true;
+		} catch (err) {
+			this.#pending--;
+			await this.#recover(err);
+			return false;
+		}
+	}
+
+	/** Check for news more often while a screen needs it, such as the bartender's queue. */
+	watch(ms: number) {
+		const timer = setInterval(() => {
+			if (this.status === 'ready' && document.visibilityState === 'visible' && this.#pending === 0) {
+				this.refresh().catch(() => {});
+			}
+		}, ms);
+		return () => clearInterval(timer);
 	}
 
 	async #recover(err: unknown) {

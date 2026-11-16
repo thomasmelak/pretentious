@@ -1,4 +1,4 @@
-import type { CoreState, Op, Order, OrderInput, PublicMenu } from './shared/types.ts';
+import type { CoreState, Op, Order, OrderInput, OrderStatus, PublicMenu } from './shared/types.ts';
 
 /** Where the API lives. Empty means "same origin" (dev proxy or single-server hosting). */
 const BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
@@ -39,5 +39,7 @@ export const api = {
 	order: (pin: string, input: OrderInput) =>
 		call<{ order: Order }>('/orders', { pin, body: input }),
 	voidOrder: (pin: string, id: string, voided: boolean) =>
-		call<{ order: Order }>('/orders/void', { pin, body: { id, voided } })
+		call<{ order: Order }>('/orders/void', { pin, body: { id, voided } }),
+	orderStatus: (pin: string, id: string, status: OrderStatus) =>
+		call<{ order: Order }>('/orders/status', { pin, body: { id, status } })
 };

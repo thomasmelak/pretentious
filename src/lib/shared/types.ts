@@ -100,7 +100,17 @@ export interface Order {
 	total: number;
 	payment: Payment;
 	voided: boolean;
+	/**
+	 * Where the order is: waiting for the bartender, ready for the waiter to pick up, or
+	 * served. Orders taken before the bartender queue existed have none and count as served.
+	 */
+	status?: OrderStatus;
+	/** ISO timestamp of when the bartender marked it ready. */
+	readyAt?: string;
 }
+
+export type OrderStatus = 'waiting' | 'ready' | 'served';
+export const ORDER_STATUSES: OrderStatus[] = ['waiting', 'ready', 'served'];
 
 export interface OrderInput {
 	eventId: string;

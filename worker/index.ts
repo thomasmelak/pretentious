@@ -6,7 +6,8 @@
  */
 import { buildOrder, emptyCore, publicMenu } from '../src/lib/shared/logic.ts';
 import { applyOp } from '../src/lib/shared/reducer.ts';
-import type { CoreState, Op, Order, OrderInput } from '../src/lib/shared/types.ts';
+import { ORDER_STATUSES } from '../src/lib/shared/types.ts';
+import type { CoreState, Op, Order, OrderInput, OrderStatus } from '../src/lib/shared/types.ts';
 
 interface Env {
 	DB: D1Database;
@@ -103,6 +104,18 @@ async function listOrders(env: Env): Promise<Order[]> {
 	return results.map((row) => JSON.parse(row.data));
 }
 
+async function updateOrder(env: Env, id: unknown, change: (order: Order) => Order): Promise<Order> {
+	const row = await env.DB.prepare('SELECT data FROM orders WHERE id = ?')
+		.bind(String(id))
+		.first<{ data: string }>();
+	if (!row) throw new HttpError(404, 'That order no longer exists.');
+	const order = change(JSON.parse(row.data));
+	await env.DB.prepare('UPDATE orders SET data = ? WHERE id = ?')
+		.bind(JSON.stringify(order), order.id)
+		.run();
+	return order;
+}
+
 async function body<T>(req: Request): Promise<T> {
 	try {
 		return (await req.json()) as T;
@@ -153,14 +166,17 @@ async function api(req: Request, env: Env, path: string): Promise<Response> {
 
 	if (route === 'POST /api/orders/void') {
 		const { id, voided } = await body<{ id: string; voided: boolean }>(req);
-		const row = await env.DB.prepare('SELECT data FROM orders WHERE id = ?')
-			.bind(String(id))
-			.first<{ data: string }>();
-		if (!row) throw new HttpError(404, 'That order no longer exists.');
-		const order: Order = { ...JSON.parse(row.data), voided: Boolean(voided) };
-		await env.DB.prepare('UPDATE orders SET data = ? WHERE id = ?')
-			.bind(JSON.stringify(order), order.id)
-			.run();
+		return json(env, { order: await updateOrder(env, id, (o) => ({ ...o, voided: Boolean(voided) })) });
+	}
+
+	if (route === 'POST /api/orders/status') {
+		const { id, status } = await body<{ id: string; status: OrderStatus }>(req);
+		if (!ORDER_STATUSES.includes(status)) throw new HttpError(400, 'Unknown order status.');
+		const order = await updateOrder(env, id, (o) => ({
+			...o,
+			status,
+			readyAt: status === 'waiting' ? undefined : (o.readyAt ?? new Date().toISOString())
+		}));
 		return json(env, { order });
 	}
 

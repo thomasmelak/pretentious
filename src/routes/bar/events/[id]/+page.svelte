@@ -46,6 +46,21 @@
 		bar.dispatch({ type: 'menu.add', eventId: event.id, items });
 		toasts.push(`${items.length} drinks added. The menu looks rather well.`, 'ok');
 	}
+
+	/** Tab and Enter move down the prices; Shift+Enter moves up; Shift+Delete takes a drink off. */
+	function priceKeys(e: KeyboardEvent & { currentTarget: HTMLInputElement }, recipeId: string) {
+		const all = [...document.querySelectorAll<HTMLInputElement>('input.price-input')];
+		const at = all.indexOf(e.currentTarget);
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			all[at + (e.shiftKey ? -1 : 1)]?.focus();
+		} else if (e.key === 'Delete' && e.shiftKey && event) {
+			e.preventDefault();
+			const next = all[at + 1] ?? all[at - 1];
+			bar.dispatch({ type: 'menu.remove', eventId: event.id, recipeId });
+			requestAnimationFrame(() => next?.focus());
+		}
+	}
 </script>
 
 {#if event}
@@ -107,7 +122,11 @@
 								min="0"
 								step="0.5"
 								value={row.price}
+								class="price-input"
 								aria-label={`Price of ${row.recipe.name}`}
+								aria-keyshortcuts="Enter Shift+Delete"
+								onfocus={(e) => e.currentTarget.select()}
+								onkeydown={(e) => priceKeys(e, row.recipe.id)}
 								onchange={(e) =>
 									bar.dispatch({
 										type: 'menu.price',
@@ -117,8 +136,10 @@
 									})}
 							/>
 						</label>
+						<!-- Out of the tab order, so Tab runs down the prices. Shift+Delete in a price removes it. -->
 						<button
 							class="btn small quiet"
+							tabindex="-1"
 							aria-label={`Remove ${row.recipe.name} from the menu`}
 							onclick={() =>
 								bar.dispatch({ type: 'menu.remove', eventId: event.id, recipeId: row.recipe.id })}
