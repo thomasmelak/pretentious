@@ -356,3 +356,118 @@ export function listNames(names: string[]): string {
 	if (names.length <= 1) return names.join('');
 	return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
+
+/** What one drink of a recipe costs the bar to pour. */
+export interface DrinkCost {
+	/** Cost of the ingredients that have a price. */
+	cost: number;
+	/** Ingredients with no price, or no measure to price, so `cost` is short by them. */
+	unpriced: string[];
+}
+
+/** One pour's worth of each priced ingredient, optional ones included, since they usually go in. */
+export function drinkCost(core: CoreState, recipe: Recipe): DrinkCost {
+	const ingredients = new Map(allIngredients(core).map((i) => [i.id, i]));
+	let cost = 0;
+	const unpriced: string[] = [];
+	for (const line of recipe.ingredients) {
+		const ingredient = ingredients.get(line.id);
+		const price = core.costs?.[line.id];
+		const use = usage(line.amount, ingredient?.category);
+		if (price && use && use.unit === price.unit) cost += (price.price / price.size) * use.n;
+		else unpriced.push(ingredient?.name ?? line.id);
+	}
+	return { cost: Math.round(cost * 100) / 100, unpriced };
+}
+
+/** Cost as a share of the price, the bar trade's "pour cost": 0.2 is 20%. Null when free. */
+export const pourCost = (cost: number, price: number): number | null => (price > 0 ? cost / price : null);
+
+export interface Purchase {
+	id: string;
+	name: string;
+	unit: 'ml' | 'each';
+	/** How much the planned drinks use. */
+	need: number;
+	/** Whole bottles or packs to buy, when there is a price. */
+	packs: number | null;
+	size: number | null;
+	spend: number | null;
+}
+
+export interface Budget {
+	/** Drinks planned, spread evenly over the menu. */
+	drinks: number;
+	/** Average across the menu, one of each drink. */
+	avgCost: number;
+	avgPrice: number;
+	/** Cost of what the planned drinks pour. */
+	pourSpend: number;
+	/** Cost of the whole bottles to buy for them. */
+	buySpend: number;
+	/** Takings if the drinks sell at menu prices; 0 at an open bar. */
+	takings: number;
+	shopping: Purchase[];
+	/** Drinks on the menu with every ingredient priced. */
+	priced: number;
+	/** Ingredients without a price, so the totals leave them out. */
+	unpriced: string[];
+}
+
+/** What an event's menu costs for a number of drinks, spread evenly over it, and what to buy. */
+export function menuBudget(core: CoreState, event: BarEvent, drinks: number): Budget {
+	const rows = menuRows(core, event);
+	const ingredients = new Map(allIngredients(core).map((i) => [i.id, i]));
+	const each = rows.length ? drinks / rows.length : 0;
+	const need = new Map<string, { unit: 'ml' | 'each'; n: number }>();
+	const unpriced = new Set<string>();
+	let costSum = 0;
+	let priceSum = 0;
+	let priced = 0;
+	for (const row of rows) {
+		const c = drinkCost(core, row.recipe);
+		costSum += c.cost;
+		if (!c.unpriced.length) priced++;
+		priceSum += row.price;
+		c.unpriced.forEach((n) => unpriced.add(n));
+		for (const line of row.recipe.ingredients) {
+			const use = usage(line.amount, ingredients.get(line.id)?.category);
+			if (!use) continue;
+			const key = `${line.id}|${use.unit}`;
+			const was = need.get(key) ?? { unit: use.unit, n: 0 };
+			was.n += use.n * each;
+			need.set(key, was);
+		}
+	}
+	const shopping: Purchase[] = [];
+	for (const [key, { unit, n }] of need) {
+		const id = key.split('|')[0];
+		const price = core.costs?.[id];
+		const priced = price && price.unit === unit;
+		const packs = priced ? Math.ceil(n / price.size - 1e-9) : null;
+		shopping.push({
+			id,
+			name: ingredients.get(id)?.name ?? id,
+			unit,
+			need: Math.round(n * 10) / 10,
+			packs,
+			size: priced ? price.size : null,
+			spend: priced && packs !== null ? Math.round(packs * price.price * 100) / 100 : null
+		});
+	}
+	shopping.sort((a, b) => (b.spend ?? -1) - (a.spend ?? -1) || a.name.localeCompare(b.name));
+	const avgCost = rows.length ? costSum / rows.length : 0;
+	const avgPrice = rows.length ? priceSum / rows.length : 0;
+	const round = (n: number) => Math.round(n * 100) / 100;
+	return {
+		drinks,
+		avgCost: round(avgCost),
+		avgPrice: round(avgPrice),
+		pourSpend: round(avgCost * drinks),
+		buySpend: round(shopping.reduce((sum, p) => sum + (p.spend ?? 0), 0)),
+		takings: event.openBar ? 0 : round(avgPrice * drinks),
+		shopping,
+		priced,
+		unpriced: [...unpriced].sort()
+	};
+}

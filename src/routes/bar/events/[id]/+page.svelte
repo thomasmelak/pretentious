@@ -8,12 +8,25 @@
 	import PriceEdit from '#lib/components/PriceEdit.svelte';
 	import { money } from '#lib/format.ts';
 	import { calm } from '#lib/motion.ts';
-	import { menuRows, missing } from '#lib/shared/logic.ts';
+	import { drinkCost, menuBudget, menuRows, missing, pourCost } from '#lib/shared/logic.ts';
 	import { toasts } from '#lib/toast.svelte.ts';
 
 	const event = $derived(bar.core.events.find((e) => e.id === page.params.id));
 	const rows = $derived(event ? menuRows(bar.core, event) : []);
 	const live = $derived(event?.id === bar.core.activeEventId);
+	const cur = $derived(bar.core.currency);
+	const plan = $derived(event?.expect ?? 100);
+	const budget = $derived(event ? menuBudget(bar.core, event, plan) : null);
+	const margin = $derived(budget ? budget.takings - budget.buySpend : 0);
+
+	/** Pour cost bands, as the trade reads them: under a quarter is healthy, over a third is dear. */
+	const band = (share: number | null) => (share === null ? '' : share <= 0.25 ? 'good' : share <= 0.33 ? 'fair' : 'dear');
+	const pct = (share: number) => `${Math.round(share * 100)}%`;
+
+	function needText(n: number, unit: 'ml' | 'each') {
+		if (unit === 'each') return `${Math.ceil(n)}`;
+		return n >= 1000 ? `${Math.round(n / 100) / 10} l` : `${Math.round(n)} ml`;
+	}
 
 	const candidates = $derived.by(() => {
 		if (!event) return [];
@@ -105,6 +118,7 @@
 		{#if rows.length}
 			<ul class="list">
 				{#each rows as row (row.recipe.id)}
+					{@const c = drinkCost(bar.core, row.recipe)}
 					<li
 						class:off={!row.available}
 						animate:flip={{ duration: calm(300) }}
@@ -118,6 +132,12 @@
 								<span class="badge ok">Available</span>
 							{:else}
 								<span class="badge out">Hidden · needs {names(row.missing)}</span>
+							{/if}
+							{#if c.cost > 0}
+								{@const share = event.openBar ? null : pourCost(c.cost, row.price)}
+								<span class="pour {band(share)}" title={c.unpriced.length ? `Not counting ${c.unpriced.join(', ')}` : undefined}>
+									Costs {money(c.cost, cur, 2)}{c.unpriced.length ? '+' : ''}{share !== null ? ` · ${pct(share)} of the price` : ''}
+								</span>
 							{/if}
 						</div>
 						<PriceEdit
@@ -147,6 +167,96 @@
 			<p class="empty">This menu is empty. Add drinks from the list below.</p>
 		{/if}
 	</section>
+
+	{#if budget && rows.length}
+		<section class="budget">
+			<div class="section-head spread">
+				<h2>Budget</h2>
+				<label class="plan">
+					Planning for
+					<input
+						type="number"
+						min="1"
+						step="10"
+						value={plan}
+						aria-label="Drinks you expect to pour"
+						onchange={(e) => bar.dispatch({ type: 'event.expect', id: event.id, drinks: Number(e.currentTarget.value) })}
+					/>
+					drinks
+				</label>
+			</div>
+			<p class="muted">
+				Spread evenly over the {rows.length} drinks on the menu.
+				{#if budget.priced < rows.length}
+					<b class="partial">{budget.priced} of {rows.length} are fully priced</b>, so these sums are low until the rest are.
+				{/if}
+			</p>
+			<div class="stats">
+				<div class="stat">
+					<span class="eyebrow">A drink costs</span>
+					<b class="figure">{money(budget.avgCost, cur, 2)}</b>
+					<span class="muted">
+						on average{#if !event.openBar && budget.avgPrice > 0}, <span class="pour {band(pourCost(budget.avgCost, budget.avgPrice))}">{pct(budget.avgCost / budget.avgPrice)} of the price</span>{/if}
+					</span>
+				</div>
+				<div class="stat">
+					<span class="eyebrow">To buy</span>
+					<b class="figure">{money(budget.buySpend, cur)}</b>
+					<span class="muted">whole bottles · {money(budget.pourSpend, cur)} is poured</span>
+				</div>
+				{#if event.openBar}
+					<div class="stat">
+						<span class="eyebrow">Open bar</span>
+						<b class="figure">{money(budget.buySpend / budget.drinks, cur, 2)}</b>
+						<span class="muted">a drink, with nothing taken</span>
+					</div>
+				{:else}
+					<div class="stat">
+						<span class="eyebrow">Takings</span>
+						<b class="figure">{money(Math.round(budget.takings), cur)}</b>
+						<span class="muted">at menu prices</span>
+					</div>
+					<div class="stat">
+						<span class="eyebrow">Left after stock</span>
+						<b class="figure" class:neg={margin < 0}>{money(Math.round(margin), cur)}</b>
+						<span class="muted">takings less bottles</span>
+					</div>
+				{/if}
+			</div>
+			{#if budget.unpriced.length}
+				<p class="unpriced">
+					No price yet for {budget.unpriced.length > 6
+						? `${budget.unpriced.slice(0, 5).join(', ')} and ${budget.unpriced.length - 5} more`
+						: names(budget.unpriced)}, so the sums leave them out.
+					<a href="#/bar/inventory">Price them in Inventory</a>.
+				</p>
+			{/if}
+			<details class="shopping">
+				<summary>Shopping list · {budget.shopping.length} ingredients</summary>
+				<table>
+					<thead>
+						<tr><th>Ingredient</th><th>Needed</th><th>Buy</th><th>Spend</th></tr>
+					</thead>
+					<tbody>
+						{#each budget.shopping as p (p.id + p.unit)}
+							<tr class:none={p.spend === null}>
+								<td>{p.name}</td>
+								<td>{needText(p.need, p.unit)}</td>
+								<td>
+									{#if p.packs !== null && p.size !== null}
+										{p.packs} × {p.unit === 'each' ? (p.size === 1 ? 'each' : `${p.size}`) : needText(p.size, 'ml')}
+									{:else}
+										<span class="muted">no price</span>
+									{/if}
+								</td>
+								<td>{p.spend !== null ? money(p.spend, cur) : '–'}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</details>
+		</section>
+	{/if}
 
 	<section>
 		<div class="section-head spread">
@@ -277,6 +387,111 @@
 	}
 	.page-head a {
 		text-decoration: none;
+	}
+	.pour {
+		font-size: 13px;
+		color: var(--muted);
+		font-variant-numeric: tabular-nums;
+	}
+	.pour.good {
+		color: var(--available);
+	}
+	.pour.fair {
+		color: var(--gilt);
+	}
+	.pour.dear {
+		color: var(--out);
+	}
+	.what .pour {
+		display: block;
+		margin-top: 2px;
+	}
+	.plan {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 15px;
+		color: var(--muted);
+		letter-spacing: 0;
+		text-transform: none;
+	}
+	.plan input {
+		width: 6em;
+		min-height: 38px;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.stats {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+		gap: 12px;
+		margin-top: 14px;
+	}
+	.stat {
+		display: grid;
+		gap: 4px;
+		padding: 14px 16px;
+		border: 1px solid var(--line);
+		background: rgb(0 0 0 / 0.12);
+	}
+	.stat b {
+		font-size: 28px;
+		font-weight: 400;
+		color: var(--gilt);
+		font-variant-numeric: tabular-nums;
+	}
+	.stat b.neg {
+		color: var(--out);
+	}
+	.stat .muted {
+		font-size: 14px;
+	}
+	.partial {
+		color: var(--gilt);
+		font-weight: 500;
+	}
+	.unpriced {
+		margin-top: 12px;
+		font-size: 14px;
+		color: var(--muted);
+	}
+	.shopping {
+		margin-top: 14px;
+	}
+	.shopping summary {
+		cursor: pointer;
+		font-size: 13px;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		font-weight: 600;
+		color: var(--gilt);
+	}
+	.shopping table {
+		width: 100%;
+		margin-top: 10px;
+		border-collapse: collapse;
+		font-variant-numeric: tabular-nums;
+	}
+	.shopping th {
+		text-align: left;
+		font-size: 12px;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--muted);
+		font-weight: 600;
+		padding: 6px 8px;
+		border-bottom: 1px solid var(--line);
+	}
+	.shopping td {
+		padding: 8px;
+		border-bottom: 1px solid var(--line);
+	}
+	.shopping th:not(:first-child),
+	.shopping td:not(:first-child) {
+		text-align: right;
+	}
+	.shopping tr.none td {
+		color: var(--muted);
 	}
 	@media (max-width: 520px) {
 		.list li {
