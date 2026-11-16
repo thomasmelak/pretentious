@@ -4,9 +4,9 @@
 	import { bar } from '#lib/bar.svelte.ts';
 	import Count from '#lib/components/Count.svelte';
 	import GlassIcon from '#lib/components/GlassIcon.svelte';
+	import PriceEdit from '#lib/components/PriceEdit.svelte';
 	import ProfileIcon from '#lib/components/ProfileIcon.svelte';
 	import RecipeWizard from '#lib/components/RecipeWizard.svelte';
-	import { money } from '#lib/format.ts';
 	import { calm } from '#lib/motion.ts';
 	import { PROFILES } from '#lib/shared/catalog.ts';
 	import { profileOf, type Suggestion } from '#lib/shared/logic.ts';
@@ -94,7 +94,14 @@
 		<div class="title">
 			<GlassIcon glass={s.recipe.glass} size={36} color={s.recipe.color} />
 			<h3>{s.recipe.name}</h3>
-			<span class="price">{money(s.recipe.price, bar.core.currency)}</span>
+			<PriceEdit
+				value={s.recipe.price}
+				currency={bar.core.currency}
+				name={s.recipe.name}
+				group="recipes"
+				compact
+				onsave={(price) => bar.dispatch({ type: 'recipe.update', recipe: { ...s.recipe, price } })}
+			/>
 		</div>
 		<p class="profile"><ProfileIcon profile={profileOf(s.recipe)} size={18} /> {profileLabel(s.recipe).label}</p>
 		{#if s.recipe.note}<p class="note">{s.recipe.note}</p>{/if}
