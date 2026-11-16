@@ -4,6 +4,7 @@ import { INGREDIENTS } from '../src/lib/shared/catalog.ts';
 import {
 	buildOrder,
 	drinkCost,
+	iceUse,
 	menuBudget,
 	pourCost,
 	emptyCore,
@@ -398,15 +399,17 @@ test('drink cost and menu budget come from ingredient prices', () => {
 		{ type: 'menu.add', eventId: 'e1', items: [{ recipeId: 'negroni', price: 12 }, { recipeId: 'americano', price: 10 }] },
 		{ type: 'cost.set', id: 'gin', price: 21, size: 700, unit: 'ml' },
 		{ type: 'cost.set', id: 'campari', price: 28, size: 700, unit: 'ml' },
-		{ type: 'cost.set', id: 'sweet-vermouth', price: 20, size: 1000, unit: 'ml' }
+		{ type: 'cost.set', id: 'sweet-vermouth', price: 20, size: 1000, unit: 'ml' },
+		// A bag of 100 cubes for 5.
+		{ type: 'cost.set', id: 'ice', price: 5, size: 100, unit: 'each' }
 	];
 	for (const op of ops) core = applyOp(core, op);
 	const negroni = RECIPES.find((r) => r.id === 'negroni')!;
 	const americano = RECIPES.find((r) => r.id === 'americano')!;
-	// 30 ml each at 3, 4 and 2 cents a millilitre.
-	assertEquals(drinkCost(core, negroni), { cost: 2.7, unpriced: [] });
-	// The soda has no price yet, so it is named and left out.
-	assertEquals(drinkCost(core, americano).cost, 2.7);
+	// 30 ml each at 3, 4 and 2 cents a millilitre, plus 8 cubes of ice at 5 cents.
+	assertEquals(drinkCost(core, negroni), { cost: 3.1, unpriced: [] });
+	// The soda has no price yet, so it is named and left out. Built over ice: 6 cubes.
+	assertEquals(drinkCost(core, americano).cost, 3);
 	assertEquals(drinkCost(core, americano).unpriced.length, 1);
 	assertEquals(pourCost(2.7, 12), 0.225);
 	assertEquals(pourCost(2.7, 0), null);
@@ -418,7 +421,9 @@ test('drink cost and menu budget come from ingredient prices', () => {
 	assertEquals(buy.campari, [6, 168]);
 	assertEquals(buy['sweet-vermouth'], [4, 80]);
 	assertEquals(buy.soda, [null, null]);
-	assertEquals([b.avgCost, b.pourSpend, b.buySpend, b.takings], [2.7, 270, 311, 1100]);
+	// 50 × 8 + 50 × 6 cubes is 700, so 7 bags.
+	assertEquals(buy.ice, [7, 35]);
+	assertEquals([b.avgCost, b.pourSpend, b.buySpend, b.takings], [3.05, 305, 346, 1100]);
 	// Only the Negroni has every ingredient priced.
 	assertEquals(b.priced, 1);
 	// An open bar takes nothing.
@@ -428,6 +433,26 @@ test('drink cost and menu budget come from ingredient prices', () => {
 	core = applyOp(core, { type: 'event.expect', id: 'e1', drinks: 120 });
 	assertEquals(core.events[0].expect, 120);
 	core = applyOp(core, { type: 'cost.clear', id: 'gin' });
-	assertEquals(drinkCost(core, negroni).cost, 1.8);
+	assertEquals(drinkCost(core, negroni).cost, 2.2);
 	expect(() => applyOp(core, { type: 'cost.set', id: 'gin', price: 21, size: 0, unit: 'ml' })).toThrow();
+});
+
+test('ice is read from the method unless the recipe lists it', () => {
+	const by = (id: string) => RECIPES.find((r) => r.id === id)!;
+	// Stirred, then served on a large cube.
+	assertEquals(iceUse(by('negroni')), 8);
+	// Shaken and strained into a coupe.
+	assertEquals(iceUse(by('daiquiri')), 6);
+	// Shaken, then over fresh ice.
+	assertEquals(iceUse(by('margarita')), 12);
+	// Shaken with crushed ice that stays in the glass.
+	assertEquals(iceUse(by('pina-colada')), 8);
+	// Listed by the bar, the recipe wins.
+	assertEquals(iceUse({ ...by('negroni'), ingredients: [{ id: 'ice', amount: '3 cubes' }] }), 3);
+
+	// Counted ice comes off with each drink made, and goes back on undo.
+	let core = applyOp(emptyCore(), { type: 'level.set', id: 'ice', unit: 'each', full: 200, left: 200 });
+	core = applyOp(core, { type: 'pour', recipeId: 'negroni', qty: 5 });
+	assertEquals(core.levels?.ice.left, 160);
+	assertEquals(applyOp(core, { type: 'pour', recipeId: 'negroni', qty: -5 }).levels?.ice.left, 200);
 });

@@ -82,6 +82,7 @@
 		[/egg/, 'egg', '#F4EBD8'],
 		[/olive/, 'olive', '#8FA548'],
 		[/cherr/, 'cherry', '#A3122A'],
+		[/\bice\b/, 'cube', '#CFE9F2'],
 		[/sugar|cube/, 'cube', '#F7F3EA'],
 		[/salt/, 'shaker', '#F4F1E8'],
 		[/cucumber/, 'slice', '#9FCB6B'],

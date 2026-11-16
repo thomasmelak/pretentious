@@ -123,7 +123,8 @@ export const INGREDIENTS: Ingredient[] = [
 		['egg-white', 'Egg white'],
 		['cream', 'Cream'],
 		['coconut-cream', 'Coconut cream'],
-		['espresso', 'Espresso']
+		['espresso', 'Espresso'],
+		['ice', 'Ice']
 	])
 ];
 

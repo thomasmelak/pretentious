@@ -241,7 +241,7 @@
 						{#each budget.shopping as p (p.id + p.unit)}
 							<tr class:none={p.spend === null}>
 								<td>{p.name}</td>
-								<td>{needText(p.need, p.unit)}</td>
+								<td>{needText(p.need, p.unit)}{p.id === 'ice' ? ' cubes' : ''}</td>
 								<td>
 									{#if p.packs !== null && p.size !== null}
 										{p.packs} × {p.unit === 'each' ? (p.size === 1 ? 'each' : `${p.size}`) : needText(p.size, 'ml')}
