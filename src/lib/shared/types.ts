@@ -68,6 +68,8 @@ export interface BarEvent {
 	/** ISO date, yyyy-mm-dd. May be empty. */
 	date: string;
 	items: MenuItem[];
+	/** Drinks are on the house: no prices anywhere, and orders go straight to the bar. */
+	openBar?: boolean;
 }
 
 /** Everything except orders. Stored as one document. */
@@ -80,9 +82,22 @@ export interface CoreState {
 	customRecipes: Recipe[];
 	events: BarEvent[];
 	activeEventId: string | null;
+	/** How much is left of the ingredients the bar keeps count of, by ingredient id. */
+	levels?: Record<string, Level>;
 }
 
-export type Payment = 'cash' | 'digital';
+/**
+ * A tracked ingredient: what a full restock holds and what is left. Liquids are counted
+ * in millilitres, garnishes and the like one at a time.
+ */
+export interface Level {
+	unit: 'ml' | 'each';
+	full: number;
+	left: number;
+}
+
+/** 'open' is an order at an open bar: nobody pays for it. */
+export type Payment = 'cash' | 'digital' | 'open';
 
 export interface OrderLine {
 	recipeId: string;
@@ -100,7 +115,17 @@ export interface Order {
 	total: number;
 	payment: Payment;
 	voided: boolean;
+	/**
+	 * Where the order is: waiting for the bartender, ready for the waiter to pick up, or
+	 * served. Orders taken before the bartender queue existed have none and count as served.
+	 */
+	status?: OrderStatus;
+	/** ISO timestamp of when the bartender marked it ready. */
+	readyAt?: string;
 }
+
+export type OrderStatus = 'waiting' | 'ready' | 'served';
+export const ORDER_STATUSES: OrderStatus[] = ['waiting', 'ready', 'served'];
 
 export interface OrderInput {
 	eventId: string;
@@ -112,7 +137,7 @@ export interface OrderInput {
 export interface PublicMenu {
 	rev: number;
 	currency: string;
-	event: { name: string; date: string } | null;
+	event: { name: string; date: string; openBar?: boolean } | null;
 	items: {
 		id: string;
 		name: string;
@@ -142,7 +167,14 @@ export type Op =
 	| { type: 'event.update'; id: string; name: string; date: string }
 	| { type: 'event.delete'; id: string }
 	| { type: 'event.activate'; id: string | null }
+	| { type: 'event.openBar'; id: string; open: boolean }
 	| { type: 'menu.add'; eventId: string; items: MenuItem[] }
 	| { type: 'menu.remove'; eventId: string; recipeId: string }
 	| { type: 'menu.price'; eventId: string; recipeId: string; price: number }
-	| { type: 'currency.set'; currency: string };
+	| { type: 'currency.set'; currency: string }
+	| { type: 'level.set'; id: string; unit: Level['unit']; full: number; left: number }
+	| { type: 'level.clear'; id: string }
+	/** Back to full, and in stock. */
+	| { type: 'level.restock'; id: string }
+	/** Drinks made: use up their ingredients. A negative qty puts them back (undo). */
+	| { type: 'pour'; recipeId: string; qty: number };

@@ -4,6 +4,8 @@
 	import { slide } from 'svelte/transition';
 	import { bar } from '#lib/bar.svelte.ts';
 	import { calm } from '#lib/motion.ts';
+	import { orderNumbers, queue, roundsText } from '#lib/shared/logic.ts';
+	import { toasts } from '#lib/toast.svelte.ts';
 	import { ticket } from '#lib/stores/ticket.ts';
 	import { wizard } from '#lib/stores/wizard.ts';
 	import type { LayoutProps } from './$types';
@@ -14,7 +16,8 @@
 		{ href: '#/bar/inventory', id: '/bar/inventory', label: 'Inventory' },
 		{ href: '#/bar/recipes', id: '/bar/recipes', label: 'Recipes' },
 		{ href: '#/bar/events', id: '/bar/events', label: 'Events' },
-		{ href: '#/bar/orders', id: '/bar/orders', label: 'Orders' }
+		{ href: '#/bar/orders', id: '/bar/orders', label: 'Orders' },
+		{ href: '#/bar/bartender', id: '/bar/bartender', label: 'Bartender' }
 	];
 
 	const here = $derived(page.route.id ?? '');
@@ -24,8 +27,40 @@
 			? Object.values($ticket.lines).reduce((n, q) => n + q, 0)
 			: 0
 	);
+	const waiting = $derived(queue(bar.orders, bar.core.activeEventId).length);
+	const ready = $derived(queue(bar.orders, bar.core.activeEventId, 'ready'));
 	const badge = (id: string) =>
-		id === '/bar/recipes' && $wizard.open ? '•' : id === '/bar/orders' && openDrinks ? String(openDrinks) : '';
+		id === '/bar/recipes' && $wizard.open
+			? '•'
+			: id === '/bar/orders' && ready.length
+				? String(ready.length)
+				: id === '/bar/orders' && openDrinks
+					? String(openDrinks)
+					: id === '/bar/bartender' && waiting
+						? String(waiting)
+						: '';
+	const badgeLabel = (id: string) =>
+		id === '/bar/orders'
+			? ready.length
+				? 'orders ready for pickup'
+				: 'order in progress'
+			: id === '/bar/bartender'
+				? 'orders waiting'
+				: 'recipe in progress';
+
+	// Tell whoever is on the floor when drinks come off the bar, whatever screen they are on.
+	let seen: Set<string> | null = null;
+	$effect(() => {
+		const ids = ready.map((o) => o.id);
+		if (bar.status !== 'ready') return;
+		if (seen && !here.startsWith('/bar/bartender')) {
+			const numbers = orderNumbers(bar.orders);
+			for (const o of ready) {
+				if (!seen.has(o.id)) toasts.push(`Order ${numbers.get(o.id)} is ready: ${roundsText(o)}.`, 'ok', 8000);
+			}
+		}
+		seen = new Set(ids);
+	});
 
 	let pin = $state('');
 	let signingIn = $state(false);
@@ -68,20 +103,27 @@
 					<a href={tab.href} aria-current={here.startsWith(tab.id) ? 'page' : undefined}>
 						{tab.label}
 						{#if badge(tab.id)}
-							<span class="dot" aria-label={tab.id === '/bar/orders' ? 'order in progress' : 'recipe in progress'}
-								>{badge(tab.id)}</span
+							<span
+								class="dot"
+								class:go={tab.id === '/bar/orders' && ready.length}
+								aria-label={badgeLabel(tab.id)}>{badge(tab.id)}</span
 							>
 						{/if}
 					</a>
 				{/each}
 			</nav>
 		</div>
-		{#if ($wizard.open && !here.startsWith('/bar/recipes')) || (openDrinks && !here.startsWith('/bar/orders'))}
+		{#if ($wizard.open && !here.startsWith('/bar/recipes')) || ((openDrinks || ready.length) && !here.startsWith('/bar/orders'))}
 			<div class="resume" transition:slide={{ duration: calm(250) }}>
 				<div class="wrap row">
 					<span class="eyebrow">Waiting for you</span>
 					{#if $wizard.open && !here.startsWith('/bar/recipes')}
 						<a href="#/bar/recipes">Recipe: {draftName} →</a>
+					{/if}
+					{#if ready.length && !here.startsWith('/bar/orders')}
+						<a href="#/bar/orders" class="go">
+							{ready.length === 1 ? `Order ${orderNumbers(bar.orders).get(ready[0].id)} is` : `${ready.length} orders are`} ready for pickup →
+						</a>
 					{/if}
 					{#if openDrinks && !here.startsWith('/bar/orders')}
 						<a href="#/bar/orders">Order: {openDrinks} {openDrinks === 1 ? 'drink' : 'drinks'} →</a>
@@ -197,6 +239,12 @@
 		font-size: 11px;
 		letter-spacing: 0;
 		vertical-align: 1px;
+	}
+	.dot.go {
+		background: var(--available);
+	}
+	.resume a.go {
+		color: var(--available);
 	}
 	.resume {
 		border-top: 1px solid var(--line);

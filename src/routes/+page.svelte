@@ -49,6 +49,7 @@
 
 	const items = $derived(menu?.items ?? []);
 	const currency = $derived(menu?.currency ?? 'USD');
+	const openBar = $derived(Boolean(menu?.event?.openBar));
 	const spirits = $derived(SPIRIT_GROUPS.filter((g) => items.some((i) => spiritKey(i) === g.id)));
 	const moods = $derived(PROFILES.filter((p) => items.some((i) => i.profile === p.id)));
 	const shown = $derived(
@@ -216,6 +217,9 @@
 				{menu.event.date ? eventDate(menu.event.date) : "Tonight's menu"}
 			</p>
 			<h1>{menu.event.name}</h1>
+			{#if openBar}
+				<p class="open-bar">Open bar. Tonight the drinks are on the house.</p>
+			{/if}
 		</header>
 
 		{#if items.length}
@@ -302,7 +306,7 @@
 										<p class="note">{item.note}</p>
 									</div>
 									<div class="side">
-										<span class="price">{money(item.price, currency)}</span>
+										{#if !openBar}<span class="price">{money(item.price, currency)}</span>{/if}
 										<button
 											type="button"
 											class="add"
@@ -374,7 +378,7 @@
 				<span class="eyebrow">Your round</span>
 				<b>
 					{roundCount}
-					{roundCount === 1 ? 'drink' : 'drinks'} · {money(roundTotal, currency)}
+					{roundCount === 1 ? 'drink' : 'drinks'}{openBar ? '' : ` · ${money(roundTotal, currency)}`}
 				</b>
 			</p>
 			<button type="button" class="btn primary" onclick={() => roundDialog?.showModal()}>
@@ -406,15 +410,19 @@
 						onclick={() => bump(line.item.id, 1)}>+</button
 					>
 				</span>
-				<span class="price">{money(line.item.price * line.qty, currency)}</span>
+				{#if !openBar}<span class="price">{money(line.item.price * line.qty, currency)}</span>{/if}
 			</li>
 		{/each}
 	</ul>
-	<p class="spread total">
-		<span class="eyebrow">Total</span>
-		<b class="price">{money(roundTotal, currency)}</b>
-	</p>
-	<p class="muted small">Show this at the bar. You pay the bartender, in cash or digitally.</p>
+	{#if openBar}
+		<p class="muted small">Show this at the bar. It is an open bar, so there is nothing to pay.</p>
+	{:else}
+		<p class="spread total">
+			<span class="eyebrow">Total</span>
+			<b class="price">{money(roundTotal, currency)}</b>
+		</p>
+		<p class="muted small">Show this at the bar. You pay the bartender, in cash or digitally.</p>
+	{/if}
 	<div class="row">
 		<button type="button" class="btn primary" onclick={() => roundDialog?.close()}>Done</button>
 		<button
@@ -431,6 +439,17 @@
 </dialog>
 
 <style>
+	.open-bar {
+		display: inline-block;
+		margin-top: 10px;
+		padding: 6px 14px 4px;
+		border: 1px solid var(--gilt);
+		color: var(--gilt);
+		font-size: 14px;
+		font-weight: 600;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+	}
 	.menu {
 		max-width: 720px;
 		padding-block: 20px 48px;

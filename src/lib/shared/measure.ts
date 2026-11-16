@@ -93,3 +93,40 @@ export function convertQuantity(text: string, from: Unit, to: Unit): string {
 	const oz = from === 'oz' ? n : n / ML_PER_OZ;
 	return to === 'oz' ? formatOz(oz).replace('≈', '') : formatMl(oz);
 }
+
+/** An amount for several drinks at once: "1½ oz" × 3 is ["4½ oz", "135 ml"]. Non-volumes stay as written. */
+export function scaled(amount: string, times: number): [string, string?] | null {
+	const v = parseVolume(amount);
+	if (!v || times <= 1) return null;
+	const oz = `${formatOz(v.oz * times)} oz`;
+	const ml = `${formatMl(v.oz * times)} ml`;
+	return v.unit === 'oz' ? [oz, ml] : [ml, oz];
+}
+
+export interface Usage {
+	n: number;
+	unit: 'ml' | 'each';
+}
+
+const EACH = /\b(leaf|leaves|slices?|wheels?|wedges?|whole|sprigs?|twists?|peels?|cubes?|pieces?|eggs?|whites?|olives?|cherr(?:y|ies)|beans?)\b/;
+
+/**
+ * How much of an ingredient one drink uses, for keeping count of stock. Dashes, a
+ * barspoon, a rinse and a top-up get a typical pour; a bare number of a garnish counts
+ * the pieces. Null when there is no sensible guess.
+ */
+export function usage(amount: string, category?: string): Usage | null {
+	const t = amount.trim().toLowerCase();
+	if (!t) return null;
+	const lead = t.match(/^([\d.,\s/¼½¾⅓⅔⅛⅜⅝⅞]+)/);
+	const count = lead ? parseQuantity(lead[1]) : null;
+	if (/dash/.test(t)) return { n: (count ?? 1) * 0.8, unit: 'ml' };
+	if (/drop/.test(t)) return { n: (count ?? 1) * 0.05, unit: 'ml' };
+	if (/barspoon|bar spoon|tsp|teaspoon/.test(t)) return { n: (count ?? 1) * 5, unit: 'ml' };
+	if (/rinse|spritz|mist/.test(t)) return { n: 5, unit: 'ml' };
+	if (/^top|top up|to top|fill/.test(t)) return { n: 90, unit: 'ml' };
+	if (EACH.test(t)) return { n: count ?? 1, unit: 'each' };
+	if (category === 'fresh' && count !== null && !/oz|ml|cl/.test(t)) return { n: count, unit: 'each' };
+	const v = parseVolume(t);
+	return v ? { n: v.oz * ML_PER_OZ, unit: 'ml' } : null;
+}

@@ -1,4 +1,5 @@
 import { INGREDIENTS, PROFILES, RECIPES } from './catalog.ts';
+import { usage } from './measure.ts';
 import type {
 	BarEvent,
 	CoreState,
@@ -6,8 +7,10 @@ import type {
 	Ingredient,
 	Order,
 	OrderInput,
+	OrderStatus,
 	Profile,
 	PublicMenu,
+	Level,
 	Recipe
 } from './types.ts';
 
@@ -111,6 +114,55 @@ export function menuRows(core: CoreState, event: BarEvent): MenuRow[] {
 	return rows;
 }
 
+export interface Supply {
+	id: string;
+	name: string;
+	level: Level;
+	/** Drinks left at the biggest pour on the menu that uses it; null when nothing on it does. */
+	drinksLeft: number | null;
+	/** Drinks on the menu that need it. */
+	drinks: string[];
+}
+
+/** Drinks a level is warned about at: "about 5 drinks away from running out". */
+export const LOW_AT = 5;
+
+/** Every counted ingredient, with how many drinks it has left on this event's menu. */
+export function supplies(core: CoreState, event: BarEvent | null): Supply[] {
+	if (!core.levels) return [];
+	const ingredients = new Map(allIngredients(core).map((i) => [i.id, i]));
+	const rows = event ? menuRows(core, event) : [];
+	const out: Supply[] = [];
+	for (const [id, level] of Object.entries(core.levels)) {
+		const ingredient = ingredients.get(id);
+		if (!ingredient) continue;
+		let most = 0;
+		const drinks: string[] = [];
+		for (const row of rows) {
+			const line = row.recipe.ingredients.find((i) => i.id === id && !i.optional);
+			const use = line && usage(line.amount, ingredient.category);
+			if (!use || use.unit !== level.unit) continue;
+			drinks.push(row.recipe.name);
+			most = Math.max(most, use.n);
+		}
+		const left = Math.max(0, level.left);
+		out.push({
+			id,
+			name: ingredient.name,
+			level,
+			drinksLeft: most ? Math.floor(left / most + 1e-9) : null,
+			drinks
+		});
+	}
+	return out.sort((a, b) => (a.drinksLeft ?? 1e9) - (b.drinksLeft ?? 1e9) || a.name.localeCompare(b.name));
+}
+
+/** In stock, but enough for only a handful more drinks on tonight's menu. */
+export const runningLow = (core: CoreState, event: BarEvent | null): Supply[] =>
+	supplies(core, event).filter(
+		(s) => s.drinksLeft !== null && s.drinksLeft <= LOW_AT && core.stock.includes(s.id)
+	);
+
 export const activeEvent = (core: CoreState): BarEvent | null =>
 	core.events.find((e) => e.id === core.activeEventId) ?? null;
 
@@ -121,7 +173,7 @@ export function publicMenu(core: CoreState): PublicMenu {
 	return {
 		rev: core.rev,
 		currency: core.currency,
-		event: event ? { name: event.name, date: event.date } : null,
+		event: event ? { name: event.name, date: event.date, ...(event.openBar ? { openBar: true } : {}) } : null,
 		items: event
 			? menuRows(core, event)
 					.filter((row) => row.available)
@@ -141,7 +193,8 @@ export function publicMenu(core: CoreState): PublicMenu {
 							amount: i.amount,
 							...(i.optional ? { optional: true } : {})
 						})),
-						price
+						// At an open bar the prices stay behind the bar.
+						price: event.openBar ? 0 : price
 					}))
 			: []
 	};
@@ -153,8 +206,11 @@ const cents = (n: number) => Math.round(n * 100);
 export function buildOrder(core: CoreState, input: OrderInput, id: string, at: string): Order {
 	const event = core.events.find((e) => e.id === input.eventId);
 	if (!event) throw new Error('That event no longer exists.');
-	if (input.payment !== 'cash' && input.payment !== 'digital') {
-		throw new Error('Payment must be cash or digital.');
+	// An open bar takes no payment, whatever the till sent.
+	const payment = event.openBar ? 'open' : input.payment;
+	if (payment !== 'cash' && payment !== 'digital') {
+		if (payment !== 'open') throw new Error('Payment must be cash or digital.');
+		if (!event.openBar) throw new Error('This event is not an open bar.');
 	}
 	const rows = new Map(menuRows(core, event).map((row) => [row.recipe.id, row]));
 	const lines = [];
@@ -164,8 +220,9 @@ export function buildOrder(core: CoreState, input: OrderInput, id: string, at: s
 		if (!(qty > 0) || qty > 99) continue;
 		const row = rows.get(line.recipeId);
 		if (!row) throw new Error('A drink in this order is not on the menu.');
-		lines.push({ recipeId: row.recipe.id, name: row.recipe.name, price: row.price, qty });
-		total += cents(row.price) * qty;
+		const price = payment === 'open' ? 0 : row.price;
+		lines.push({ recipeId: row.recipe.id, name: row.recipe.name, price, qty });
+		total += cents(price) * qty;
 	}
 	if (lines.length === 0) throw new Error('The order is empty.');
 	return {
@@ -174,9 +231,68 @@ export function buildOrder(core: CoreState, input: OrderInput, id: string, at: s
 		at,
 		lines,
 		total: total / 100,
-		payment: input.payment,
-		voided: false
+		payment,
+		voided: false,
+		status: 'waiting'
 	};
+}
+
+/** Orders taken before the queue existed have no status: they were served long ago. */
+export const statusOf = (order: Order): OrderStatus => order.status ?? 'served';
+
+/** An event's orders in one status, oldest first: the bartender works from the top. */
+export function queue(orders: Order[], eventId: string | null, status: OrderStatus = 'waiting'): Order[] {
+	return orders
+		.filter((o) => o.eventId === eventId && !o.voided && statusOf(o) === status)
+		.sort((a, b) => a.at.localeCompare(b.at));
+}
+
+/** Orders are numbered through the night, so the bartender can call "number 14". */
+export function orderNumbers(orders: Order[]): Map<string, number> {
+	const byEvent = new Map<string, Order[]>();
+	for (const o of orders) byEvent.set(o.eventId, [...(byEvent.get(o.eventId) ?? []), o]);
+	const numbers = new Map<string, number>();
+	for (const list of byEvent.values()) {
+		list.sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
+		list.forEach((o, i) => numbers.set(o.id, i + 1));
+	}
+	return numbers;
+}
+
+/** "5 Negronis and 6 Boulevardiers". */
+export function roundsText(order: Order): string {
+	return listNames(rounds(order).map((r) => countName(r.qty, r.name)));
+}
+
+/** "1 Negroni", "3 Negronis". */
+export const countName = (qty: number, name: string) => `${qty} ${qty === 1 ? name : plural(name)}`;
+
+const plural = (name: string) => (/(s|x|z|ch|sh)$/i.test(name) ? name : /[^aeiou]y$/i.test(name) ? `${name.slice(0, -1)}ies` : `${name}s`);
+
+export interface Round {
+	recipeId: string;
+	name: string;
+	qty: number;
+}
+
+/** What to make for an order: one row per drink, however many times it was rung up. */
+export function rounds(order: Order): Round[] {
+	const byId = new Map<string, Round>();
+	for (const line of order.lines) {
+		const round = byId.get(line.recipeId);
+		if (round) round.qty += line.qty;
+		else byId.set(line.recipeId, { recipeId: line.recipeId, name: line.name, qty: line.qty });
+	}
+	return [...byId.values()];
+}
+
+/** How many of each drink are still to be made across the queue. */
+export function queuedCounts(orders: Order[]): Map<string, number> {
+	const counts = new Map<string, number>();
+	for (const order of orders) {
+		for (const line of order.lines) counts.set(line.recipeId, (counts.get(line.recipeId) ?? 0) + line.qty);
+	}
+	return counts;
 }
 
 export interface Totals {
@@ -198,7 +314,7 @@ export function totals(orders: Order[]): Totals {
 		count++;
 		drinks += o.lines.reduce((n, l) => n + l.qty, 0);
 		if (o.payment === 'cash') cash += cents(o.total);
-		else digital += cents(o.total);
+		else if (o.payment === 'digital') digital += cents(o.total);
 	}
 	return {
 		cash: cash / 100,

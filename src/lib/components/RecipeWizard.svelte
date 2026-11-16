@@ -7,6 +7,7 @@
 	import { bar } from '#lib/bar.svelte.ts';
 	import AmountInput from '#lib/components/AmountInput.svelte';
 	import GlassIcon from '#lib/components/GlassIcon.svelte';
+	import IngredientIcon from '#lib/components/IngredientIcon.svelte';
 	import ProfileIcon from '#lib/components/ProfileIcon.svelte';
 	import { money } from '#lib/format.ts';
 	import { calm } from '#lib/motion.ts';
@@ -270,6 +271,7 @@
 											onclick={() => toggleIngredient(i.id)}
 										>
 											<span class="tick" aria-hidden="true">{chosen.has(i.id) ? '✓' : '+'}</span>
+											<IngredientIcon ingredient={i} size={28} />
 											<span class="nm">{i.name}</span>
 											<span class="stock" class:in={stock.has(i.id)}>
 												{stock.has(i.id) ? 'In stock' : 'Not stocked'}
@@ -710,8 +712,8 @@
 		min-height: 64px;
 		cursor: pointer;
 		display: grid;
-		grid-template-columns: 1fr auto;
-		gap: 2px 8px;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		gap: 2px 10px;
 		align-content: start;
 		transition:
 			border-color 180ms,
@@ -724,20 +726,25 @@
 	.ing:active {
 		transform: scale(0.97);
 	}
-	.ing .nm {
+	.ing :global(.ing-icon) {
 		grid-column: 1;
+		grid-row: 1 / 3;
+		align-self: center;
+	}
+	.ing .nm {
+		grid-column: 2;
 		grid-row: 1;
 		font-size: 16px;
 		line-height: 1.25;
 	}
 	.ing .tick {
-		grid-column: 2;
+		grid-column: 3;
 		grid-row: 1;
 		color: var(--gilt);
 		font-weight: 600;
 	}
 	.ing .stock {
-		grid-column: 1 / -1;
+		grid-column: 2 / -1;
 		font-size: 12px;
 		letter-spacing: 0.1em;
 		text-transform: uppercase;

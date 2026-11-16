@@ -8,10 +8,17 @@ import {
 	menuChanges,
 	mood,
 	publicMenu,
+	orderNumbers,
+	queue,
+	roundsText,
+	runningLow,
+	supplies,
+	queuedCounts,
+	rounds,
 	suggest,
 	totals
 } from '../src/lib/shared/logic.ts';
-import { convertQuantity, measures, parseQuantity } from '../src/lib/shared/measure.ts';
+import { convertQuantity, measures, parseQuantity, scaled, usage } from '../src/lib/shared/measure.ts';
 import { applyOp } from '../src/lib/shared/reducer.ts';
 import type { CoreState, Op } from '../src/lib/shared/types.ts';
 
@@ -271,4 +278,97 @@ test('classics and built-in ingredients can be edited and restored', () => {
 		ingredient: { id: 'olmeca', name: 'Olmeca Chocolate', category: 'spirit', family: 'agave' }
 	});
 	assertEquals(core.customIngredients.find((i) => i.id === 'olmeca')?.family, 'agave');
+});
+
+test('the bartender works through waiting orders, oldest first', () => {
+	const core = run([
+		{ type: 'event.create', id: 'e1', name: 'Launch', date: '2026-11-20' },
+		{ type: 'menu.add', eventId: 'e1', items: [{ recipeId: 'negroni', price: 12 }, { recipeId: 'martini', price: 14 }] }
+	]);
+	const later = buildOrder(core, { eventId: 'e1', payment: 'cash', lines: [{ recipeId: 'martini', qty: 1 }] }, 'b', '2026-11-20T21:05:00Z');
+	const first = buildOrder(
+		core,
+		{
+			eventId: 'e1',
+			payment: 'digital',
+			lines: [
+				{ recipeId: 'negroni', qty: 2 },
+				{ recipeId: 'martini', qty: 1 },
+				{ recipeId: 'negroni', qty: 1 }
+			]
+		},
+		'a',
+		'2026-11-20T21:00:00Z'
+	);
+	assertEquals(first.status, 'waiting');
+	// Orders from before the queue have no status and are not waiting.
+	const legacy = { ...later, id: 'old', status: undefined };
+	const voided = { ...later, id: 'v', voided: true };
+	const ready = { ...later, id: 'm', status: 'ready' as const };
+	const all = [later, legacy, voided, ready, first];
+	const q = queue(all, 'e1');
+	assertEquals(q.map((o) => o.id), ['a', 'b']);
+	assertEquals(queue(all, 'e1', 'ready').map((o) => o.id), ['m']);
+	assertEquals(orderNumbers([later, first]).get('a'), 1);
+	assertEquals(roundsText(first), '3 Negronis and 1 Martini');
+	// The same drink rung up twice in one order is made as one round.
+	assertEquals(rounds(first), [
+		{ recipeId: 'negroni', name: 'Negroni', qty: 3 },
+		{ recipeId: 'martini', name: 'Martini', qty: 1 }
+	]);
+	assertEquals(Object.fromEntries(queuedCounts(q)), { negroni: 3, martini: 2 });
+	assertEquals(scaled('1 oz', 3), ['3 oz', '90 ml']);
+	assertEquals(scaled('22.5 ml', 2), ['45 ml', '1½ oz']);
+	assertEquals(scaled('2 dashes', 3), null);
+});
+
+test('an open bar hides prices and takes no payment', () => {
+	const core = run([
+		{ type: 'event.create', id: 'e1', name: 'Launch', date: '' },
+		{ type: 'menu.add', eventId: 'e1', items: [{ recipeId: 'negroni', price: 12 }] },
+		{ type: 'stock.set', ids: ['gin', 'campari', 'sweet-vermouth'], inStock: true },
+		{ type: 'event.openBar', id: 'e1', open: true }
+	]);
+	const menu = publicMenu(core);
+	assertEquals(menu.event?.openBar, true);
+	assertEquals(menu.items.map((i) => i.price), [0]);
+	const o = buildOrder(core, { eventId: 'e1', payment: 'cash', lines: [{ recipeId: 'negroni', qty: 2 }] }, 'a', '');
+	assertEquals([o.payment, o.total, o.lines[0].price], ['open', 0, 0]);
+	assertEquals(totals([o]).drinks, 2);
+	assertEquals(totals([o]).total, 0);
+	// Closing the open bar brings the prices back.
+	const paid = applyOp(core, { type: 'event.openBar', id: 'e1', open: false });
+	assertEquals(publicMenu(paid).items[0].price, 12);
+	assertThrows(() => buildOrder(paid, { eventId: 'e1', payment: 'open', lines: [{ recipeId: 'negroni', qty: 1 }] }, 'b', ''));
+});
+
+test('making drinks uses up counted ingredients and warns when they run low', () => {
+	assertEquals(usage('1½ oz'), { n: 45, unit: 'ml' });
+	assertEquals(usage('2 dashes'), { n: 1.6, unit: 'ml' });
+	assertEquals(usage('6 leaves'), { n: 6, unit: 'each' });
+	assertEquals(usage('1', 'fresh'), { n: 1, unit: 'each' });
+	assertEquals(usage('Top'), { n: 90, unit: 'ml' });
+	let core = run([
+		{ type: 'event.create', id: 'e1', name: 'Launch', date: '' },
+		{ type: 'menu.add', eventId: 'e1', items: [{ recipeId: 'negroni', price: 12 }, { recipeId: 'americano', price: 10 }] },
+		{ type: 'stock.set', ids: ['gin', 'campari', 'sweet-vermouth', 'soda'], inStock: true },
+		// A 700 ml bottle with 300 ml left. The Americano pours 45 ml, so six of those.
+		{ type: 'level.set', id: 'campari', unit: 'ml', full: 700, left: 300 }
+	]);
+	const event = core.events[0];
+	assertEquals(supplies(core, event)[0].drinksLeft, 6);
+	assertEquals(runningLow(core, event), []);
+	core = applyOp(core, { type: 'pour', recipeId: 'negroni', qty: 5 });
+	assertEquals(core.levels?.campari.left, 150);
+	const low = runningLow(core, event);
+	assertEquals(low.map((s) => [s.id, s.drinksLeft]), [['campari', 3]]);
+	assertEquals(low[0].drinks.sort(), ['Americano', 'Negroni']);
+	// Undo puts it back; restocking fills it up and puts it in stock.
+	assertEquals(applyOp(core, { type: 'pour', recipeId: 'negroni', qty: -5 }).levels?.campari.left, 300);
+	const out = applyOp(core, { type: 'stock.set', ids: ['campari'], inStock: false });
+	assertEquals(runningLow(out, event), []);
+	const full = applyOp(out, { type: 'level.restock', id: 'campari' });
+	assertEquals([full.levels?.campari.left, full.stock.includes('campari')], [700, true]);
+	// Ingredients nobody counts are left alone.
+	assertEquals(applyOp(full, { type: 'pour', recipeId: 'negroni', qty: 1 }).levels, { campari: { unit: 'ml', full: 700, left: 670 } });
 });
