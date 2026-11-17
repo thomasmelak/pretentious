@@ -43,6 +43,32 @@
 	addEventListener('scroll', onScroll, { passive: true });
 	onScroll();
 
+	/* ---------- Phone menu ---------- */
+	const toggle = $('#nav-toggle');
+	const links = $('#nav-links');
+	const small = matchMedia('(max-width: 1100px)');
+	function setMenu(open, focusBack) {
+		nav.classList.toggle('nav-open', open);
+		document.body.classList.toggle('nav-locked', open);
+		toggle.setAttribute('aria-expanded', String(open));
+		$('.nav-toggle-label', toggle).textContent = open ? 'Close' : 'Menu';
+		if (open) $('a', links).focus({ preventScroll: true });
+		else if (focusBack) toggle.focus();
+	}
+	toggle.addEventListener('click', () => setMenu(toggle.getAttribute('aria-expanded') !== 'true', false));
+	links.addEventListener('click', (e) => { if (e.target.closest('a') && small.matches) setMenu(false, false); });
+	addEventListener('keydown', (e) => {
+		if (e.key === 'Escape' && nav.classList.contains('nav-open')) setMenu(false, true);
+	});
+	nav.addEventListener('keydown', (e) => {
+		if (e.key !== 'Tab' || !nav.classList.contains('nav-open')) return;
+		const items = [$('.nav-home'), toggle, ...$$('a:not([hidden])', links)];
+		const i = items.indexOf(document.activeElement);
+		if (e.shiftKey && i === 0) { e.preventDefault(); items[items.length - 1].focus(); }
+		else if (!e.shiftKey && i === items.length - 1) { e.preventDefault(); items[0].focus(); }
+	});
+	small.addEventListener('change', () => { if (!small.matches) setMenu(false, false); });
+
 	/* ---------- Scroll reveal ---------- */
 	if ('IntersectionObserver' in window) {
 		const io = new IntersectionObserver((entries) => {

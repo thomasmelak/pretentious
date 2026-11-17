@@ -25,10 +25,14 @@
 		<img src="assets/favicon.svg" alt="" width="40" height="40">
 		<span>The Pretentious Peacock</span>
 	</a>
-	<nav aria-label="Sections">
+	<button class="nav-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-links">
+		<span class="nav-toggle-label">Menu</span>
+		<span class="burger" aria-hidden="true"><i></i><i></i><i></i></span>
+	</button>
+	<nav aria-label="Sections" id="nav-links">
 		<a href="#services">The service</a>
 		<a href="#match">Find your drink</a>
-		<a href="#menu">Menu</a>
+		<a href="#menu">The regulars</a>
 		<a href="#planner">Plan</a>
 		<a href="#enquire">Enquire</a>
 		<a class="nav-live" data-menu-link hidden href="#menu">Tonight's menu</a>
