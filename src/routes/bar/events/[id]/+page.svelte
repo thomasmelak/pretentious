@@ -73,19 +73,22 @@
 				Drinks missing an ingredient stay here but are hidden from guests until it is back.
 			</p>
 		</div>
-		{#if live}
-			<span class="badge pick">Live</span>
-		{:else}
-			<button
-				class="btn"
-				onclick={() => {
-					bar.dispatch({ type: 'event.activate', id: event.id });
-					toasts.push(`${event.name} is live. Guests now see its menu.`, 'ok');
-				}}
-			>
-				Go live
-			</button>
-		{/if}
+		<div class="head-actions">
+			<a class="btn quiet" href="#/bar/events/{event.id}/print">Print menu</a>
+			{#if live}
+				<span class="badge pick">Live</span>
+			{:else}
+				<button
+					class="btn"
+					onclick={() => {
+						bar.dispatch({ type: 'event.activate', id: event.id });
+						toasts.push(`${event.name} is live. Guests now see its menu.`, 'ok');
+					}}
+				>
+					Go live
+				</button>
+			{/if}
+		</div>
 	</div>
 
 	<form class="card details" onsubmit={rename}>
@@ -387,6 +390,12 @@
 	}
 	.page-head a {
 		text-decoration: none;
+	}
+	.head-actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 10px;
 	}
 	.pour {
 		font-size: 13px;
