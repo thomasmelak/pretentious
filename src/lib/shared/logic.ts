@@ -166,9 +166,11 @@ export const runningLow = (core: CoreState, event: BarEvent | null): Supply[] =>
 export const activeEvent = (core: CoreState): BarEvent | null =>
 	core.events.find((e) => e.id === core.activeEventId) ?? null;
 
-/** The guest menu: the active event's drinks, minus anything that cannot be made right now. */
-export function publicMenu(core: CoreState): PublicMenu {
-	const event = activeEvent(core);
+/**
+ * The guest menu: the active event's drinks, minus anything that cannot be made right now.
+ * The printed menu passes its own event, and `all` to keep drinks that are out tonight.
+ */
+export function publicMenu(core: CoreState, event = activeEvent(core), all = false): PublicMenu {
 	const ingredients = new Map(allIngredients(core).map((i) => [i.id, i]));
 	return {
 		rev: core.rev,
@@ -176,7 +178,7 @@ export function publicMenu(core: CoreState): PublicMenu {
 		event: event ? { name: event.name, date: event.date, ...(event.openBar ? { openBar: true } : {}) } : null,
 		items: event
 			? menuRows(core, event)
-					.filter((row) => row.available)
+					.filter((row) => all || row.available)
 					.map(({ recipe, price }) => ({
 						id: recipe.id,
 						name: recipe.name,
